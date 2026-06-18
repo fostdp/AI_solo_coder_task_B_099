@@ -339,3 +339,101 @@ pub struct QueryLimit {
 pub struct WsQuery {
     pub ship_id: Option<String>,
 }
+
+pub async fn get_all_ships(
+    _req: actix_web::HttpRequest,
+) -> Result<actix_web::HttpResponse, actix_web::error::InternalError<&'static str>> {
+    let result = crate::ship_comparison::get_all_ships_list();
+    Ok(actix_web::HttpResponse::Ok().json(result))
+}
+
+pub async fn get_ship_config_extended(
+    path: actix_web::web::Path<String>,
+) -> Result<actix_web::HttpResponse, actix_web::error::InternalError<&'static str>> {
+    let ship_id = path.into_inner();
+    let config = crate::ship_comparison::get_ship_config_extended(&ship_id);
+    match config {
+        Some(cfg) => Ok(actix_web::HttpResponse::Ok().json(cfg)),
+        None => Ok(actix_web::HttpResponse::NotFound().body("Ship not found")),
+    }
+}
+
+pub async fn compare_ships_handler(
+    req: actix_web::web::Json<crate::models::ShipComparisonRequest>,
+    data: actix_web::web::Data<AppState>,
+) -> Result<actix_web::HttpResponse, actix_web::error::InternalError<&'static str>> {
+    let damage_params = data.damage_params.clone();
+    let result = crate::ship_comparison::compare_ships(&req.ship_ids, &damage_params);
+    Ok(actix_web::HttpResponse::Ok().json(result))
+}
+
+pub async fn compare_eras_handler(
+    req: actix_web::web::Json<crate::models::EraComparisonRequest>,
+    data: actix_web::web::Data<AppState>,
+    clickhouse: actix_web::web::Data<crate::clickhouse_client::ClickHouseClient>,
+) -> Result<actix_web::HttpResponse, actix_web::error::InternalError<&'static str>> {
+    let damage_params = data.damage_params.clone();
+    let clickhouse = clickhouse.as_ref().clone();
+    match crate::ship_comparison::compare_eras(&req, &damage_params, &clickhouse).await {
+        Ok(result) => Ok(actix_web::HttpResponse::Ok().json(result)),
+        Err(e) => Ok(actix_web::HttpResponse::BadRequest().body(e)),
+    }
+}
+
+pub async fn simulate_interactive_handler(
+    req: actix_web::web::Json<crate::models::InteractiveSimulationRequest>,
+    sim_tx: actix_web::web::Data<mpsc::Sender<crate::flooding_simulator::SimCommand>>,
+) -> Result<actix_web::HttpResponse, actix_web::error::InternalError<&'static str>> {
+    let (tx, rx) = oneshot::channel();
+    sim_tx
+        .send(crate::flooding_simulator::SimCommand::SimulateInteractive {
+            request: req.into_inner(),
+            reply: tx,
+        })
+        .await
+        .map_err(|_| actix_web::error::InternalError::from_response(
+            "Failed to send command",
+            actix_web::HttpResponse::InternalServerError().body("Simulator not available"),
+        ))?;
+
+    match rx.await {
+        Ok(Ok(result)) => Ok(actix_web::HttpResponse::Ok().json(result)),
+        Ok(Err(e)) => Ok(actix_web::HttpResponse::BadRequest().body(e)),
+        Err(_) => Ok(actix_web::HttpResponse::InternalServerError().body("No response from simulator")),
+    }
+}
+
+pub async fn simulate_pirate_attack_handler(
+    req: actix_web::web::Json<crate::models::PirateAttackRequest>,
+    sim_tx: actix_web::web::Data<mpsc::Sender<crate::flooding_simulator::SimCommand>>,
+) -> Result<actix_web::HttpResponse, actix_web::error::InternalError<&'static str>> {
+    let (tx, rx) = oneshot::channel();
+    sim_tx
+        .send(crate::flooding_simulator::SimCommand::SimulatePirateAttack {
+            request: req.into_inner(),
+            reply: tx,
+        })
+        .await
+        .map_err(|_| actix_web::error::InternalError::from_response(
+            "Failed to send command",
+            actix_web::HttpResponse::InternalServerError().body("Simulator not available"),
+        ))?;
+
+    match rx.await {
+        Ok(Ok(result)) => Ok(actix_web::HttpResponse::Ok().json(result)),
+        Ok(Err(e)) => Ok(actix_web::HttpResponse::BadRequest().body(e)),
+        Err(_) => Ok(actix_web::HttpResponse::InternalServerError().body("No response from simulator")),
+    }
+}
+
+pub async fn control_door_handler(
+    req: actix_web::web::Json<crate::models::DoorControlRequest>,
+) -> Result<actix_web::HttpResponse, actix_web::error::InternalError<&'static str>> {
+    use chrono::Utc;
+    let result = crate::models::BulkheadDoorState {
+        bulkhead_id: req.bulkhead_id,
+        is_open: req.open,
+        last_changed: Utc::now(),
+    };
+    Ok(actix_web::HttpResponse::Ok().json(result))
+}

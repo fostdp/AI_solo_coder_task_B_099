@@ -1,0 +1,27 @@
+{
+    "ship_id": "fu_ship_001",
+    "ship_name": "福船（明代福建水师战船）",
+    "ship_type": "fu",
+    "dynasty": "明代",
+    "historical_description": "福船是明代福建沿海建造的大型战船，船身高大，底尖上阔，首尾高昂，适合深海航行。水密隔舱技术成熟，抗沉性极佳。",
+    "length_overall": 48.0,
+    "beam": 12.0,
+    "depth": 5.2,
+    "design_draft": 3.2,
+    "displacement": 700.0,
+    "compartment_count": 12,
+    "compartment_names": [
+        "艏尖舱", "前货舱1", "前货舱2", "兵舱1", "兵舱2",
+        "中货舱", "炮舱", "后货舱1", "后货舱2", "机舱",
+        "艉尖舱", "淡水舱"
+    ],
+    "compartment_lengths": [3.5, 4.0, 4.0, 4.5, 4.5, 5.0, 5.0, 4.5, 4.5, 4.5, 3.0, 1.0],
+    "compartment_volumes": [25.0, 130.0, 130.0, 150.0, 150.0, 180.0, 160.0, 140.0, 140.0, 130.0, 20.0, 15.0],
+    "watertight_bulkheads": [3.5, 7.5, 11.5, 16.0, 20.5, 25.5, 30.5, 35.0, 39.5, 44.0, 47.0],
+    "characteristics": {
+        "hull_form": "底尖上阔，首昂尾高",
+        "primary_use": "海战、远洋航行",
+        "notable_feature": "楼船结构，可发佛郎机炮",
+        "max_safe_flooded": 4
+    }
+}

@@ -323,6 +323,369 @@
             margin-right: 8px;
             border-radius: 3px;
         }
+
+        .tab-container {
+            display: flex;
+            gap: 5px;
+            margin-bottom: 10px;
+        }
+
+        .tab-btn {
+            flex: 1;
+            padding: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: #aaa;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.3s;
+        }
+
+        .tab-btn.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #fff;
+            border-color: #667eea;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .ship-selector {
+            margin-bottom: 15px;
+        }
+
+        .ship-selector label {
+            font-size: 12px;
+            color: #aaa;
+            margin-bottom: 5px;
+            display: block;
+        }
+
+        .ship-selector select {
+            width: 100%;
+            padding: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 215, 0, 0.3);
+            color: #fff;
+            border-radius: 5px;
+            font-size: 12px;
+        }
+
+        .ship-info {
+            background: rgba(255, 215, 0, 0.1);
+            border: 1px solid rgba(255, 215, 0, 0.3);
+            border-radius: 5px;
+            padding: 10px;
+            margin-bottom: 10px;
+            font-size: 11px;
+        }
+
+        .ship-info h4 {
+            color: #ffd700;
+            font-size: 12px;
+            margin-bottom: 5px;
+        }
+
+        .comparison-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 11px;
+        }
+
+        .comparison-table th,
+        .comparison-table td {
+            padding: 6px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            text-align: center;
+        }
+
+        .comparison-table th {
+            background: rgba(255, 215, 0, 0.2);
+            color: #ffd700;
+        }
+
+        .comparison-table tr:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .best-value {
+            color: #2ed573;
+            font-weight: bold;
+        }
+
+        .multi-select {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+            margin-bottom: 10px;
+        }
+
+        .multi-select label {
+            display: flex;
+            align-items: center;
+            background: rgba(255, 255, 255, 0.1);
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            cursor: pointer;
+        }
+
+        .multi-select input[type="checkbox"] {
+            margin-right: 5px;
+            width: auto;
+        }
+
+        .timeline {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .timeline-event {
+            position: relative;
+            padding-left: 20px;
+            padding-bottom: 15px;
+            border-left: 2px solid rgba(255, 215, 0, 0.3);
+            font-size: 11px;
+        }
+
+        .timeline-event::before {
+            content: '';
+            position: absolute;
+            left: -6px;
+            top: 0;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #ffd700;
+        }
+
+        .timeline-event.critical::before {
+            background: #ff6b6b;
+        }
+
+        .timeline-event.safe::before {
+            background: #2ed573;
+        }
+
+        .timeline-event .time {
+            color: #ffd700;
+            font-weight: bold;
+        }
+
+        .timeline-event .desc {
+            color: #ddd;
+            margin-top: 2px;
+        }
+
+        .door-control {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 5px;
+            margin-bottom: 5px;
+            font-size: 11px;
+        }
+
+        .door-control .door-name {
+            flex: 1;
+        }
+
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 40px;
+            height: 20px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ff6b6b;
+            transition: .4s;
+            border-radius: 20px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 12px;
+            width: 12px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background-color: #2ed573;
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(20px);
+        }
+
+        .door-status {
+            margin-left: 8px;
+            font-size: 10px;
+            padding: 2px 6px;
+            border-radius: 3px;
+        }
+
+        .door-status.open {
+            background: rgba(255, 107, 107, 0.3);
+            color: #ff6b6b;
+        }
+
+        .door-status.closed {
+            background: rgba(46, 213, 115, 0.3);
+            color: #2ed573;
+        }
+
+        .era-comparison {
+            background: rgba(79, 172, 254, 0.1);
+            border: 1px solid rgba(79, 172, 254, 0.3);
+            border-radius: 5px;
+            padding: 10px;
+            margin-bottom: 10px;
+            font-size: 11px;
+        }
+
+        .era-comparison h4 {
+            color: #4facfe;
+            font-size: 12px;
+            margin-bottom: 8px;
+        }
+
+        .era-comparison p {
+            margin-bottom: 6px;
+            line-height: 1.5;
+        }
+
+        .attack-config {
+            margin-bottom: 10px;
+        }
+
+        .attack-config label {
+            display: block;
+            font-size: 11px;
+            color: #aaa;
+            margin-bottom: 3px;
+        }
+
+        .attack-config input {
+            width: 100%;
+            padding: 6px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: #fff;
+            border-radius: 4px;
+            font-size: 11px;
+            margin-bottom: 8px;
+        }
+
+        .attack-points {
+            max-height: 100px;
+            overflow-y: auto;
+            margin-bottom: 10px;
+        }
+
+        .attack-point-row {
+            display: flex;
+            gap: 5px;
+            align-items: center;
+            margin-bottom: 5px;
+            font-size: 11px;
+        }
+
+        .attack-point-row input {
+            flex: 1;
+            padding: 4px;
+            font-size: 10px;
+        }
+
+        .attack-point-row button {
+            padding: 2px 6px;
+            background: #ff6b6b;
+            border: none;
+            color: #fff;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 10px;
+        }
+
+        .conclusion-box {
+            background: rgba(255, 215, 0, 0.15);
+            border: 1px solid rgba(255, 215, 0, 0.4);
+            border-radius: 5px;
+            padding: 12px;
+            margin-top: 10px;
+            font-size: 12px;
+            line-height: 1.6;
+        }
+
+        .survival-indicator {
+            text-align: center;
+            padding: 15px;
+            background: rgba(46, 213, 115, 0.2);
+            border: 2px solid #2ed573;
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+
+        .survival-indicator.danger {
+            background: rgba(255, 107, 107, 0.2);
+            border-color: #ff6b6b;
+        }
+
+        .survival-indicator .percent {
+            font-size: 36px;
+            font-weight: bold;
+            color: #2ed573;
+        }
+
+        .survival-indicator.danger .percent {
+            color: #ff6b6b;
+        }
+
+        .survival-indicator .label {
+            font-size: 12px;
+            color: #aaa;
+            margin-top: 5px;
+        }
+
+        .simulation-result-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 5px;
+            margin-bottom: 5px;
+            font-size: 11px;
+        }
+
+        .simulation-result-row .winner {
+            color: #ffd700;
+            font-weight: bold;
+        }
     </style>
 </head>
 <body>
@@ -339,7 +702,24 @@
             <div id="canvas-container"></div>
             <div class="controls">
                 <div class="control-group">
-                    <h3>仿真控制</h3>
+                    <h3>🚢 船舶类型</h3>
+                    <div class="ship-selector">
+                        <label>选择船舶</label>
+                        <select id="ship-select">
+                            <option value="quanzhou_song_001">泉州宋代海船（宋代）</option>
+                            <option value="fu_ship_001">福船（明代福建水师战船）</option>
+                            <option value="sha_ship_001">沙船（清代崇明沙船）</option>
+                            <option value="guang_ship_001">广船（广东乌艚船）</option>
+                            <option value="modern_cargo_001">现代散货船（30000DWT）</option>
+                        </select>
+                    </div>
+                    <div class="ship-info" id="ship-info">
+                        <h4 id="ship-info-name">泉州宋代海船</h4>
+                        <p id="ship-info-desc">中国古代水密隔舱海船的杰出代表</p>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <h3>🎯 仿真控制</h3>
                     <label>破损舱室 (逗号分隔)</label>
                     <input type="text" id="damage-compartments" placeholder="例如: 3,4" />
                     <label>破损严重度 (0-1)</label>
@@ -348,14 +728,14 @@
                     <button id="reset-btn" class="danger">重置状态</button>
                 </div>
                 <div class="control-group">
-                    <h3>视角控制</h3>
+                    <h3>📐 视角控制</h3>
                     <button id="view-side">侧视图</button>
                     <button id="view-top">俯视图</button>
                     <button id="view-3d">3D视图</button>
                     <button id="animate-btn">播放进水动画</button>
                 </div>
                 <div class="control-group">
-                    <h3>隔舱优化</h3>
+                    <h3>⚙️ 隔舱优化</h3>
                     <label>最小舱数</label>
                     <input type="number" id="min-compartments" value="5" min="3" max="20" />
                     <label>最大舱数</label>
@@ -415,16 +795,121 @@
             </div>
 
             <div class="panel">
-                <h2>🚢 舱室状态</h2>
-                <div class="compartment-list" id="compartment-list">
+                <h2>🚀 功能模块</h2>
+                <div class="tab-container">
+                    <button class="tab-btn active" data-tab="compartments">舱室</button>
+                    <button class="tab-btn" data-tab="compare">对比</button>
+                    <button class="tab-btn" data-tab="era">跨时代</button>
+                    <button class="tab-btn" data-tab="pirate">海盗</button>
+                    <button class="tab-btn" data-tab="doors">舱门</button>
                 </div>
-            </div>
 
-            <div class="panel">
-                <h2>⚠️ 告警信息</h2>
-                <div class="alarms-panel" id="alarms-panel">
-                    <div style="color: #888; font-size: 12px; text-align: center; padding: 20px;">
-                        暂无告警
+                <div class="tab-content active" id="tab-compartments">
+                    <h3 style="font-size: 13px; color: #ffd700; margin-bottom: 8px;">舱室状态</h3>
+                    <div class="compartment-list" id="compartment-list">
+                    </div>
+                    <h3 style="font-size: 13px; color: #ffd700; margin-bottom: 8px; margin-top: 12px;">告警信息</h3>
+                    <div class="alarms-panel" id="alarms-panel">
+                        <div style="color: #888; font-size: 12px; text-align: center; padding: 20px;">
+                            暂无告警
+                        </div>
+                    </div>
+                </div>
+
+                <div class="tab-content" id="tab-compare">
+                    <h3 style="font-size: 13px; color: #ffd700; margin-bottom: 8px;">船舶类型对比</h3>
+                    <div class="multi-select" id="ship-multi-select">
+                        <label><input type="checkbox" value="quanzhou_song_001" checked> 泉州宋船</label>
+                        <label><input type="checkbox" value="fu_ship_001" checked> 福船</label>
+                        <label><input type="checkbox" value="sha_ship_001"> 沙船</label>
+                        <label><input type="checkbox" value="guang_ship_001"> 广船</label>
+                        <label><input type="checkbox" value="modern_cargo_001"> 现代船</label>
+                    </div>
+                    <button id="compare-btn">开始对比</button>
+                    <div id="comparison-results" style="margin-top: 12px; display: none;">
+                        <table class="comparison-table" id="comparison-table">
+                        </table>
+                        <div class="conclusion-box" id="comparison-conclusion"></div>
+                    </div>
+                </div>
+
+                <div class="tab-content" id="tab-era">
+                    <h3 style="font-size: 13px; color: #ffd700; margin-bottom: 8px;">跨时代对比</h3>
+                    <div class="ship-selector">
+                        <label>古代船舶</label>
+                        <select id="ancient-ship-select">
+                            <option value="quanzhou_song_001">泉州宋代海船</option>
+                            <option value="fu_ship_001">福船（明代）</option>
+                            <option value="sha_ship_001">沙船（清代）</option>
+                            <option value="guang_ship_001">广船（明代）</option>
+                        </select>
+                    </div>
+                    <div class="ship-selector">
+                        <label>现代船舶</label>
+                        <select id="modern-ship-select">
+                            <option value="modern_cargo_001">现代散货船（30000DWT）</option>
+                        </select>
+                    </div>
+                    <button id="era-compare-btn">开始跨时代对比</button>
+                    <div id="era-results" style="margin-top: 12px; display: none;">
+                        <div class="era-comparison">
+                            <h4>📜 技术演进时间线</h4>
+                            <p id="era-timeline"></p>
+                        </div>
+                        <div class="era-comparison">
+                            <h4>🔬 设计理念差异</h4>
+                            <p id="era-design"></p>
+                        </div>
+                        <h4 style="font-size: 12px; color: #ffd700; margin-bottom: 8px;">仿真对比</h4>
+                        <div id="era-simulation-results"></div>
+                        <div class="conclusion-box" id="era-conclusion"></div>
+                    </div>
+                </div>
+
+                <div class="tab-content" id="tab-pirate">
+                    <h3 style="font-size: 13px; color: #ffd700; margin-bottom: 8px;">⚔️ 海盗攻击极限抗沉模拟</h3>
+                    <div class="attack-config">
+                        <label>仿真时长 (秒)</label>
+                        <input type="number" id="attack-duration" value="600" min="60" max="3600" />
+                    </div>
+                    <h4 style="font-size: 11px; color: #aaa; margin-bottom: 5px;">攻击点配置</h4>
+                    <div class="attack-points" id="attack-points">
+                    </div>
+                    <button id="add-attack-btn" style="width: 100%; padding: 6px; margin-bottom: 8px; background: rgba(255,215,0,0.3); border: 1px solid rgba(255,215,0,0.5); color: #ffd700; border-radius: 4px; cursor: pointer; font-size: 11px;">+ 添加攻击点</button>
+                    <button id="pirate-attack-btn" class="danger">开始海盗攻击仿真</button>
+                    <div id="pirate-results" style="margin-top: 12px; display: none;">
+                        <div class="survival-indicator" id="survival-indicator">
+                            <div class="percent" id="survival-percent">0%</div>
+                            <div class="label">生存概率</div>
+                        </div>
+                        <h4 style="font-size: 12px; color: #ffd700; margin-bottom: 8px;">事件时间线</h4>
+                        <div class="timeline" id="attack-timeline">
+                        </div>
+                        <h4 style="font-size: 12px; color: #ffd700; margin-bottom: 8px; margin-top: 12px;">关键时刻</h4>
+                        <div id="critical-moments">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="tab-content" id="tab-doors">
+                    <h3 style="font-size: 13px; color: #ffd700; margin-bottom: 8px;">🚪 虚拟舱门操作体验</h3>
+                    <p style="font-size: 11px; color: #aaa; margin-bottom: 10px; line-height: 1.5;">
+                        您可以手动开关各水密舱壁的舱门，观察不同舱门状态对船舶抗沉性的影响。
+                        <strong>关闭舱门可以阻止进水蔓延，开启舱门会使进水扩散到相邻舱室。</strong>
+                    </p>
+                    <div id="door-controls" style="margin-bottom: 12px;">
+                    </div>
+                    <div style="margin-bottom: 10px;">
+                        <label style="font-size: 11px; color: #aaa; margin-bottom: 5px; display: block;">初始破损舱室</label>
+                        <input type="text" id="interactive-damage" placeholder="例如: 3,4" style="width: 100%; padding: 6px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: #fff; border-radius: 4px; font-size: 11px;" />
+                    </div>
+                    <div style="margin-bottom: 10px;">
+                        <label style="font-size: 11px; color: #aaa; margin-bottom: 5px; display: block;">破损严重度</label>
+                        <input type="range" id="interactive-severity" min="0" max="1" step="0.1" value="0.7" style="width: 100%;" />
+                    </div>
+                    <button id="interactive-simulate-btn">基于当前舱门状态仿真</button>
+                    <div id="interactive-result" style="margin-top: 12px; display: none;">
+                        <div class="conclusion-box" id="interactive-conclusion"></div>
                     </div>
                 </div>
             </div>

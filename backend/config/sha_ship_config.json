@@ -1,0 +1,28 @@
+{
+    "ship_id": "sha_ship_001",
+    "ship_name": "沙船（清代崇明沙船）",
+    "ship_type": "sha",
+    "dynasty": "清代",
+    "historical_description": "沙船是中国古代四大船型之一，起源于崇明沙，平底浅吃水，多桅多帆，适合内河和近海航行。水密隔舱数量多但间距小。",
+    "length_overall": 38.0,
+    "beam": 9.0,
+    "depth": 3.5,
+    "design_draft": 1.8,
+    "displacement": 280.0,
+    "compartment_count": 16,
+    "compartment_names": [
+        "艏尖舱", "前舱1", "前舱2", "前舱3", "货舱1",
+        "货舱2", "货舱3", "货舱4", "货舱5", "货舱6",
+        "后舱1", "后舱2", "后舱3", "机舱", "艉尖舱",
+        "淡水舱"
+    ],
+    "compartment_lengths": [2.0, 2.2, 2.2, 2.5, 2.5, 2.5, 2.5, 2.5, 2.5, 2.5, 2.5, 2.2, 2.2, 3.5, 2.0, 2.0],
+    "compartment_volumes": [12.0, 60.0, 60.0, 70.0, 70.0, 70.0, 70.0, 70.0, 70.0, 70.0, 65.0, 60.0, 60.0, 80.0, 10.0, 15.0],
+    "watertight_bulkheads": [2.0, 4.2, 6.4, 8.9, 11.4, 13.9, 16.4, 18.9, 21.4, 23.9, 26.4, 28.9, 31.1, 33.3, 36.8],
+    "characteristics": {
+        "hull_form": "平底方艄，浅吃水",
+        "primary_use": "漕运、近海货运",
+        "notable_feature": "多桅多帆，可逆风航行",
+        "max_safe_flooded": 5
+    }
+}

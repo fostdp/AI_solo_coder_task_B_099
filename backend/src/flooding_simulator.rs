@@ -385,6 +385,190 @@ impl ShipHydrostatics {
         }
         0
     }
+
+    pub fn simulate_with_door_states(
+        &self,
+        scenario: &FloodingScenario,
+        door_states: &[crate::models::BulkheadDoorState],
+    ) -> StabilityResult {
+        let mut effective_flooded = scenario.flooded_compartments.clone();
+        let open_doors: std::collections::HashSet<u8> = door_states
+            .iter()
+            .filter(|d| d.is_open)
+            .map(|d| d.bulkhead_id)
+            .collect();
+
+        let mut changed = true;
+        while changed {
+            changed = false;
+            let current: std::collections::HashSet<u8> = effective_flooded.iter().cloned().collect();
+            for &compartment in &effective_flooded {
+                if compartment > 0 && open_doors.contains(&(compartment - 1)) {
+                    let left = compartment - 1;
+                    if !current.contains(&left) {
+                        effective_flooded.push(left);
+                        changed = true;
+                    }
+                }
+                let right = compartment + 1;
+                if right < self.config.compartment_count && open_doors.contains(&compartment) {
+                    if !current.contains(&right) {
+                        effective_flooded.push(right);
+                        changed = true;
+                    }
+                }
+            }
+        }
+
+        effective_flooded.sort();
+        effective_flooded.dedup();
+
+        let effective_scenario = FloodingScenario {
+            ship_id: scenario.ship_id.clone(),
+            flooded_compartments: effective_flooded,
+            damage_severity: scenario.damage_severity,
+        };
+
+        self.simulate_damage(&effective_scenario)
+    }
+
+    pub fn simulate_pirate_attack(
+        &self,
+        attack: &crate::models::PirateAttackRequest,
+    ) -> crate::models::PirateAttackResult {
+        let mut timeline = Vec::new();
+        let mut active_compartments: Vec<u8> = Vec::new();
+        let mut critical_moments = Vec::new();
+        let mut last_gm = f64::MAX;
+
+        let max_time = attack.simulation_duration_seconds.max(600.0);
+        let step = 10.0;
+        let mut current_time = 0.0;
+
+        timeline.push(crate::models::TimelineEvent {
+            time_seconds: 0.0,
+            event_type: "START".to_string(),
+            description: "船舶正常航行状态".to_string(),
+            affected_compartments: Vec::new(),
+            gm_value: self.config.depth * 0.15,
+            is_safe: true,
+        });
+
+        let mut attack_iter = attack.attack_points.iter().peekable();
+
+        while current_time <= max_time {
+            while let Some(ap) = attack_iter.peek() {
+                if ap.delay_seconds <= current_time {
+                    let ap = attack_iter.next().unwrap();
+                    active_compartments.push(ap.compartment_id);
+                    active_compartments.sort();
+                    active_compartments.dedup();
+
+                    timeline.push(crate::models::TimelineEvent {
+                        time_seconds: current_time,
+                        event_type: "ATTACK".to_string(),
+                        description: format!(
+                            "海盗攻击！舱室{}破损，严重度{:.1}",
+                            ap.compartment_id, ap.damage_severity
+                        ),
+                        affected_compartments: active_compartments.clone(),
+                        gm_value: last_gm,
+                        is_safe: true,
+                    });
+                } else {
+                    break;
+                }
+            }
+
+            if !active_compartments.is_empty() {
+                let scenario = FloodingScenario {
+                    ship_id: attack.ship_id.clone(),
+                    flooded_compartments: active_compartments.clone(),
+                    damage_severity: 0.8,
+                };
+                let result = self.simulate_damage(&scenario);
+                last_gm = result.metacentric_height;
+
+                if (last_gm - 0.15).abs() < 0.02 && result.metacentric_height <= 0.15 {
+                    critical_moments.push(crate::models::CriticalMoment {
+                        time_seconds: current_time,
+                        description: "初稳心高GM降至安全阈值以下".to_string(),
+                        gm_value: result.metacentric_height,
+                    });
+                }
+
+                if !result.is_safe {
+                    timeline.push(crate::models::TimelineEvent {
+                        time_seconds: current_time,
+                        event_type: "UNSAFE".to_string(),
+                        description: format!(
+                            "船舶状态转为危险！GM={:.3}m, 横倾={:.1}°, 储备浮力={:.1}%",
+                            result.metacentric_height,
+                            result.final_heel_angle,
+                            result.reserve_buoyancy
+                        ),
+                        affected_compartments: active_compartments.clone(),
+                        gm_value: result.metacentric_height,
+                        is_safe: false,
+                    });
+                    break;
+                }
+
+                if result.sinking_time_seconds < 600.0 && result.sinking_time_seconds > 0.0 {
+                    critical_moments.push(crate::models::CriticalMoment {
+                        time_seconds: current_time,
+                        description: format!(
+                            "预计下沉时间不足10分钟！下沉时间估算: {:.0}秒",
+                            result.sinking_time_seconds
+                        ),
+                        gm_value: result.metacentric_height,
+                    });
+                }
+            }
+
+            current_time += step;
+        }
+
+        let final_scenario = FloodingScenario {
+            ship_id: attack.ship_id.clone(),
+            flooded_compartments: active_compartments.clone(),
+            damage_severity: 0.9,
+        };
+        let final_result = self.simulate_damage(&final_scenario);
+
+        let survival_probability = if final_result.is_safe {
+            (final_result.metacentric_height / 0.5).min(1.0)
+                * (final_result.reserve_buoyancy / 30.0).min(1.0)
+        } else {
+            0.0
+        };
+
+        if final_result.is_safe {
+            timeline.push(crate::models::TimelineEvent {
+                time_seconds: current_time,
+                event_type: "SURVIVED".to_string(),
+                description: format!(
+                    "海盗攻击结束，船舶成功生存！最终进水{}舱，GM={:.3}m",
+                    active_compartments.len(),
+                    final_result.metacentric_height
+                ),
+                affected_compartments: active_compartments.clone(),
+                gm_value: final_result.metacentric_height,
+                is_safe: true,
+            });
+        }
+
+        crate::models::PirateAttackResult {
+            simulation_id: uuid::Uuid::new_v4(),
+            ship_id: attack.ship_id.clone(),
+            timestamp: chrono::Utc::now(),
+            attack_points: attack.attack_points.clone(),
+            timeline_events: timeline,
+            final_state: final_result,
+            survival_probability,
+            critical_moments,
+        }
+    }
 }
 
 pub enum SimCommand {
@@ -395,6 +579,14 @@ pub enum SimCommand {
     BatchSimulate {
         scenarios: Vec<FloodingScenario>,
         reply: oneshot::Sender<Result<Vec<StabilityResult>, String>>,
+    },
+    SimulateInteractive {
+        request: crate::models::InteractiveSimulationRequest,
+        reply: oneshot::Sender<Result<StabilityResult, String>>,
+    },
+    SimulatePirateAttack {
+        request: crate::models::PirateAttackRequest,
+        reply: oneshot::Sender<Result<crate::models::PirateAttackResult, String>>,
     },
 }
 
@@ -437,6 +629,14 @@ impl FloodingSimulator {
                     }
                     let _ = reply.send(Ok(results));
                 }
+                SimCommand::SimulateInteractive { request, reply } => {
+                    let result = self.handle_interactive_simulate(&request).await;
+                    let _ = reply.send(result);
+                }
+                SimCommand::SimulatePirateAttack { request, reply } => {
+                    let result = self.handle_pirate_attack(&request).await;
+                    let _ = reply.send(result);
+                }
             }
         }
         tracing::info!("FloodingSimulator task stopped");
@@ -462,6 +662,69 @@ impl FloodingSimulator {
             .alarm_tx
             .send(AlarmCommand::EvaluateResult {
                 result: result.clone(),
+                config,
+            })
+            .await;
+
+        Ok(result)
+    }
+
+    async fn handle_interactive_simulate(
+        &self,
+        request: &crate::models::InteractiveSimulationRequest,
+    ) -> Result<StabilityResult, String> {
+        metrics::SIMULATIONS_TOTAL.inc();
+        let config = self
+            .clickhouse
+            .get_ship_config(&request.ship_id)
+            .await
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("Ship config not found for id: {}", request.ship_id))?;
+
+        let hydrostatics = ShipHydrostatics::new(config.clone(), self.damage_params.clone());
+
+        let scenario = FloodingScenario {
+            ship_id: request.ship_id.clone(),
+            flooded_compartments: request.flooded_compartments.clone(),
+            damage_severity: request.damage_severity,
+        };
+
+        let result = hydrostatics.simulate_with_door_states(&scenario, &request.door_states);
+
+        if let Err(e) = self.clickhouse.insert_simulation_result(&result).await {
+            tracing::error!("Failed to insert simulation result: {}", e);
+        }
+
+        let _ = self
+            .alarm_tx
+            .send(AlarmCommand::EvaluateResult {
+                result: result.clone(),
+                config,
+            })
+            .await;
+
+        Ok(result)
+    }
+
+    async fn handle_pirate_attack(
+        &self,
+        request: &crate::models::PirateAttackRequest,
+    ) -> Result<crate::models::PirateAttackResult, String> {
+        metrics::SIMULATIONS_TOTAL.inc();
+        let config = self
+            .clickhouse
+            .get_ship_config(&request.ship_id)
+            .await
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("Ship config not found for id: {}", request.ship_id))?;
+
+        let hydrostatics = ShipHydrostatics::new(config.clone(), self.damage_params.clone());
+        let result = hydrostatics.simulate_pirate_attack(request);
+
+        let _ = self
+            .alarm_tx
+            .send(AlarmCommand::EvaluateResult {
+                result: result.final_state.clone(),
                 config,
             })
             .await;

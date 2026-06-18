@@ -6,6 +6,7 @@ mod flooding_simulator;
 mod handlers;
 mod metrics;
 mod models;
+mod ship_comparison;
 
 use actix::prelude::*;
 use actix_cors::Cors;
@@ -154,6 +155,13 @@ async fn main() -> std::io::Result<()> {
             .route("/api/simulate", web::post().to(simulate_damage))
             .route("/api/simulate/batch", web::post().to(batch_simulate))
             .route("/api/optimize", web::post().to(optimize_compartments))
+            .route("/api/ships", web::get().to(handlers::get_all_ships))
+            .route("/api/ships/{ship_id}", web::get().to(handlers::get_ship_config_extended))
+            .route("/api/compare", web::post().to(handlers::compare_ships_handler))
+            .route("/api/compare/era", web::post().to(handlers::compare_eras_handler))
+            .route("/api/simulate/interactive", web::post().to(handlers::simulate_interactive_handler))
+            .route("/api/simulate/pirate", web::post().to(handlers::simulate_pirate_attack_handler))
+            .route("/api/door", web::post().to(handlers::control_door_handler))
             .route("/ws", web::get().to(ws_index))
     })
     .bind(format!("{}:{}", server_host, server_port))?

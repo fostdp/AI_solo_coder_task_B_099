@@ -32,11 +32,18 @@ class FloodingPanel {
 
     init() {
         this.ship3D = new JunkShip3D('canvas-container');
+        window.ship3D = this.ship3D;
         this.initCharts();
         this.initWebSocket();
         this.initUI();
         this.loadShipConfig();
         this.initCompartmentList();
+        this.initTabs();
+        this.initShipSelector();
+        this.initComparison();
+        this.initEraComparison();
+        this.initPirateAttack();
+        this.initDoorControls();
     }
 
     initCharts() {
@@ -348,9 +355,16 @@ class FloodingPanel {
 
     async loadShipConfig() {
         try {
-            const response = await fetch(`${API_BASE}/api/config/default`);
-            const config = await response.json();
-            console.log('Ship config loaded:', config);
+            const response = await fetch(`/api/ships/${this.currentShipId}`);
+            if (response.ok) {
+                const config = await response.json();
+                this.currentShipConfig = config;
+                console.log('Ship config loaded:', config);
+                document.getElementById('ship-name').textContent = config.ship_name;
+                document.getElementById('ship-info-name').textContent = config.ship_name;
+                document.getElementById('ship-info-desc').textContent = 
+                    `${config.dynasty} · ${config.historical_description}`;
+            }
         } catch (e) {
             console.error('Failed to load ship config:', e);
         }
@@ -434,14 +448,14 @@ class FloodingPanel {
         }
     }
 
-    resetShip() {
-        this.ship3D.reset();
+    resetState() {
         this.alarms = [];
         this.updateAlarmDisplay();
         this.draftHistory = [];
         this.timeLabels = [];
         this.updateDraftChart();
         this.generateInitialStabilityCurve();
+        this.initCompartmentList();
 
         document.getElementById('ship-name').className = 'status-item';
 
@@ -449,7 +463,20 @@ class FloodingPanel {
             document.getElementById(id).className = 'value';
         });
 
-        document.getElementById('draft-value').textContent = '2.80 m';
+        const draft = this.currentShipConfig?.design_draft || 2.8;
+        document.getElementById('draft-value').textContent = `${draft.toFixed(2)} m`;
+        document.getElementById('heel-value').textContent = '0.00°';
+        document.getElementById('trim-value').textContent = '0.00°';
+        document.getElementById('gm-value').textContent = '0.500 m';
+        document.getElementById('gm-value').className = 'value success';
+        document.getElementById('gz-value').textContent = '0.00 m';
+        document.getElementById('buoyancy-value').textContent = '35.0%';
+        document.getElementById('buoyancy-value').className = 'value success';
+    }
+
+    resetShip() {
+        this.ship3D.reset();
+        this.resetState();
         document.getElementById('heel-value').textContent = '0.00°';
         document.getElementById('trim-value').textContent = '0.00°';
         document.getElementById('gm-value').textContent = '0.50 m';
@@ -496,7 +523,8 @@ class FloodingPanel {
 
     initCompartmentList() {
         const container = document.getElementById('compartment-list');
-        container.innerHTML = COMPARTMENT_NAMES.map((name, i) => `
+        const names = this.currentShipConfig?.compartment_names || COMPARTMENT_NAMES;
+        container.innerHTML = names.map((name, i) => `
             <div class="compartment-item" id="compartment-${i}">
                 <span>${i + 1}. ${name}</span>
                 <div class="water-bar">
@@ -505,6 +533,16 @@ class FloodingPanel {
                 <span style="width: 50px; text-align: right;">0%</span>
             </div>
         `).join('');
+
+        this.updateWaterChartLabels();
+    }
+
+    updateWaterChartLabels() {
+        if (!this.waterChart || !this.currentShipConfig) return;
+        this.waterChart.data.labels = this.currentShipConfig.compartment_names;
+        this.waterChart.data.datasets[0].data = new Array(this.currentShipConfig.compartment_count).fill(0);
+        this.waterChart.data.datasets[0].backgroundColor = new Array(this.currentShipConfig.compartment_count).fill('rgba(79, 172, 254, 0.6)');
+        this.waterChart.update();
     }
 
     updateCompartmentStates(data) {
@@ -579,6 +617,492 @@ class FloodingPanel {
         }
 
         this.draftChart.update();
+    }
+
+    initTabs() {
+        const tabBtns = document.querySelectorAll('.tab-btn');
+        tabBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const tabId = btn.dataset.tab;
+                tabBtns.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                document.querySelectorAll('.tab-content').forEach(content => {
+                    content.classList.remove('active');
+                });
+                document.getElementById(`tab-${tabId}`).classList.add('active');
+            });
+        });
+    }
+
+    initShipSelector() {
+        const shipSelect = document.getElementById('ship-select');
+        shipSelect.addEventListener('change', async () => {
+            const shipId = shipSelect.value;
+            try {
+                const response = await fetch(`/api/ships/${shipId}`);
+                if (response.ok) {
+                    const shipConfig = await response.json();
+                    this.currentShipConfig = shipConfig;
+                    this.currentShipId = shipId;
+                    document.getElementById('ship-name').textContent = shipConfig.ship_name;
+                    document.getElementById('ship-info-name').textContent = shipConfig.ship_name;
+                    document.getElementById('ship-info-desc').textContent = 
+                        `${shipConfig.dynasty} · ${shipConfig.historical_description}`;
+                    this.updateDoorControls();
+                    this.initAttackPoints();
+                    this.resetState();
+                    if (window.ship3D) {
+                        window.ship3D.switchShipConfig(shipConfig);
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to load ship config:', error);
+            }
+        });
+    }
+
+    initComparison() {
+        const compareBtn = document.getElementById('compare-btn');
+        compareBtn.addEventListener('click', async () => {
+            const checkboxes = document.querySelectorAll('#ship-multi-select input[type="checkbox"]:checked');
+            const shipIds = Array.from(checkboxes).map(cb => cb.value);
+            
+            if (shipIds.length < 2) {
+                alert('请至少选择两艘船舶进行对比');
+                return;
+            }
+
+            try {
+                compareBtn.textContent = '对比中...';
+                compareBtn.disabled = true;
+                const response = await fetch('/api/compare', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ship_ids: shipIds })
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    this.renderComparisonResults(result);
+                }
+            } catch (error) {
+                console.error('Comparison failed:', error);
+            } finally {
+                compareBtn.textContent = '开始对比';
+                compareBtn.disabled = false;
+            }
+        });
+    }
+
+    renderComparisonResults(result) {
+        const resultsDiv = document.getElementById('comparison-results');
+        const table = document.getElementById('comparison-table');
+        const conclusion = document.getElementById('comparison-conclusion');
+
+        let header = '<thead><tr><th>指标</th>';
+        result.ships.forEach(ship => {
+            header += `<th>${ship.ship_name.split('（')[0]}</th>`;
+        });
+        header += '</tr></thead><tbody>';
+
+        result.comparison_metrics.forEach(metric => {
+            const values = Object.entries(metric.ship_values);
+            const maxVal = Math.max(...values.map(v => v[1]));
+            const minVal = Math.min(...values.map(v => v[1]));
+            const bestIsMax = metric.name !== '平均舱长';
+            
+            let row = `<tr><td>${metric.name} (${metric.unit})</td>`;
+            result.ships.forEach(ship => {
+                const val = metric.ship_values[ship.ship_id];
+                const isBest = bestIsMax ? val === maxVal : val === minVal;
+                row += `<td class="${isBest ? 'best-value' : ''}">${typeof val === 'number' ? val.toFixed(2) : val}</td>`;
+            });
+            row += '</tr>';
+            header += row;
+        });
+
+        header += '</tbody>';
+        table.innerHTML = header;
+        conclusion.innerHTML = `📌 <strong>分析结论：</strong>${result.conclusion}`;
+        resultsDiv.style.display = 'block';
+    }
+
+    initEraComparison() {
+        const compareBtn = document.getElementById('era-compare-btn');
+        compareBtn.addEventListener('click', async () => {
+            const ancientId = document.getElementById('ancient-ship-select').value;
+            const modernId = document.getElementById('modern-ship-select').value;
+
+            try {
+                compareBtn.textContent = '对比中...';
+                compareBtn.disabled = true;
+                const response = await fetch('/api/compare/era', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ancient_ship_id: ancientId, modern_ship_id: modernId })
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    this.renderEraComparisonResults(result);
+                }
+            } catch (error) {
+                console.error('Era comparison failed:', error);
+            } finally {
+                compareBtn.textContent = '开始跨时代对比';
+                compareBtn.disabled = false;
+            }
+        });
+    }
+
+    renderEraComparisonResults(result) {
+        const resultsDiv = document.getElementById('era-results');
+        
+        document.getElementById('era-timeline').textContent = result.era_comparison.timeline;
+        document.getElementById('era-design').innerHTML = `
+            <strong>设计哲学：</strong>${result.era_comparison.design_philosophy_difference}<br><br>
+            <strong>技术演进：</strong>${result.era_comparison.technology_evolution}<br><br>
+            <strong>规范体系：</strong>${result.era_comparison.regulatory_framework}
+        `;
+
+        const simResultsDiv = document.getElementById('era-simulation-results');
+        simResultsDiv.innerHTML = '';
+        
+        result.simulation_results.forEach(sim => {
+            const ancientSafe = sim.ancient_result.is_safe;
+            const modernSafe = sim.modern_result.is_safe;
+            
+            const div = document.createElement('div');
+            div.className = 'simulation-result-row';
+            div.innerHTML = `
+                <span>${sim.scenario}</span>
+                <span class="winner">🏆 ${sim.winner}</span>
+                <span style="color: ${ancientSafe ? '#2ed573' : '#ff6b6b'};">古船: ${ancientSafe ? '安全' : '沉没'}</span>
+                <span style="color: ${modernSafe ? '#2ed573' : '#ff6b6b'};">现代: ${modernSafe ? '安全' : '沉没'}</span>
+            `;
+            simResultsDiv.appendChild(div);
+
+            const analysisDiv = document.createElement('div');
+            analysisDiv.style.cssText = 'font-size: 11px; color: #aaa; margin-top: 4px; margin-bottom: 8px;';
+            analysisDiv.textContent = sim.analysis;
+            simResultsDiv.appendChild(analysisDiv);
+        });
+
+        document.getElementById('era-conclusion').innerHTML = `
+            <strong>📜 跨时代对比总结：</strong><br>
+            从${result.ancient_ship.dynasty}的「${result.ancient_ship.ship_name}」到现代的「${result.modern_ship.ship_name}」，
+            水密隔舱技术跨越千年，核心思想一脉相承。古代工匠凭借经验创造的抗沉设计，与现代基于SOLAS公约的科学分舱，
+            共同见证了人类航海技术的伟大传承与发展。
+        `;
+
+        resultsDiv.style.display = 'block';
+    }
+
+    initPirateAttack() {
+        this.attackPoints = [];
+        this.initAttackPoints();
+
+        document.getElementById('add-attack-btn').addEventListener('click', () => {
+            this.addAttackPoint();
+        });
+
+        document.getElementById('pirate-attack-btn').addEventListener('click', async () => {
+            if (this.attackPoints.length === 0) {
+                alert('请至少添加一个攻击点');
+                return;
+            }
+
+            const duration = parseInt(document.getElementById('attack-duration').value);
+            const payload = {
+                ship_id: this.currentShipId,
+                attack_points: this.attackPoints,
+                simulation_duration_seconds: duration
+            };
+
+            try {
+                const btn = document.getElementById('pirate-attack-btn');
+                btn.textContent = '仿真中...';
+                btn.disabled = true;
+                const response = await fetch('/api/simulate/pirate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    this.renderPirateAttackResults(result);
+                    this.handleSimulationResult(result.final_state);
+                    if (window.ship3D) {
+                        window.ship3D.showPirateAttackEffect();
+                    }
+                }
+            } catch (error) {
+                console.error('Pirate attack simulation failed:', error);
+            } finally {
+                const btn = document.getElementById('pirate-attack-btn');
+                btn.textContent = '开始海盗攻击仿真';
+                btn.disabled = false;
+            }
+        });
+    }
+
+    initAttackPoints() {
+        this.attackPoints = [];
+        const container = document.getElementById('attack-points');
+        container.innerHTML = '';
+        
+        if (this.currentShipConfig) {
+            const numCompartments = this.currentShipConfig.compartment_count;
+            this.addAttackPoint(Math.floor(numCompartments / 3), 0.7, 0);
+            this.addAttackPoint(Math.floor(numCompartments / 2), 0.8, 60);
+        }
+    }
+
+    addAttackPoint(compartmentId = 3, severity = 0.7, delay = 0) {
+        const container = document.getElementById('attack-points');
+        const index = this.attackPoints.length;
+        
+        const maxCompartment = this.currentShipConfig ? this.currentShipConfig.compartment_count - 1 : 12;
+
+        const div = document.createElement('div');
+        div.className = 'attack-point-row';
+        div.innerHTML = `
+            <input type="number" class="attack-compartment" value="${compartmentId}" min="0" max="${maxCompartment}" placeholder="舱室" />
+            <input type="number" class="attack-severity" value="${severity}" min="0" max="1" step="0.1" placeholder="严重度" />
+            <input type="number" class="attack-delay" value="${delay}" min="0" placeholder="延迟秒" />
+            <button class="remove-attack-btn" data-index="${index}">×</button>
+        `;
+        container.appendChild(div);
+
+        this.attackPoints.push({
+            compartment_id: compartmentId,
+            damage_severity: severity,
+            delay_seconds: delay
+        });
+
+        div.querySelector('.remove-attack-btn').addEventListener('click', (e) => {
+            const idx = parseInt(e.target.dataset.index);
+            this.attackPoints.splice(idx, 1);
+            div.remove();
+            this.updateAttackPointIndices();
+        });
+
+        div.querySelectorAll('input').forEach(input => {
+            input.addEventListener('change', () => {
+                this.updateAttackPointsFromDOM();
+            });
+        });
+    }
+
+    updateAttackPointIndices() {
+        document.querySelectorAll('.remove-attack-btn').forEach((btn, idx) => {
+            btn.dataset.index = idx;
+        });
+    }
+
+    updateAttackPointsFromDOM() {
+        const rows = document.querySelectorAll('.attack-point-row');
+        this.attackPoints = [];
+        rows.forEach(row => {
+            const comp = parseInt(row.querySelector('.attack-compartment').value);
+            const sev = parseFloat(row.querySelector('.attack-severity').value);
+            const delay = parseInt(row.querySelector('.attack-delay').value);
+            if (!isNaN(comp) && !isNaN(sev) && !isNaN(delay)) {
+                this.attackPoints.push({
+                    compartment_id: comp,
+                    damage_severity: sev,
+                    delay_seconds: delay
+                });
+            }
+        });
+    }
+
+    renderPirateAttackResults(result) {
+        const resultsDiv = document.getElementById('pirate-results');
+        const indicator = document.getElementById('survival-indicator');
+        const percent = document.getElementById('survival-percent');
+        const timeline = document.getElementById('attack-timeline');
+        const critical = document.getElementById('critical-moments');
+
+        const survivalPct = (result.survival_probability * 100).toFixed(1);
+        percent.textContent = `${survivalPct}%`;
+        
+        if (result.survival_probability < 0.3) {
+            indicator.classList.add('danger');
+        } else {
+            indicator.classList.remove('danger');
+        }
+
+        timeline.innerHTML = '';
+        result.timeline_events.forEach(event => {
+            const div = document.createElement('div');
+            div.className = `timeline-event ${event.event_type === 'UNSAFE' ? 'critical' : event.event_type === 'SURVIVED' ? 'safe' : ''}`;
+            div.innerHTML = `
+                <div class="time">${event.time_seconds.toFixed(0)}s</div>
+                <div class="desc">${event.description}</div>
+                <div style="font-size: 10px; color: #888; margin-top: 2px;">
+                    进水舱: ${event.affected_compartments.join(', ')} | GM: ${event.gm_value.toFixed(3)}m | ${event.is_safe ? '✅安全' : '❌危险'}
+                </div>
+            `;
+            timeline.appendChild(div);
+        });
+
+        critical.innerHTML = '';
+        if (result.critical_moments.length > 0) {
+            result.critical_moments.forEach(moment => {
+                const div = document.createElement('div');
+                div.style.cssText = 'padding: 8px; background: rgba(255, 107, 107, 0.1); border-left: 3px solid #ff6b6b; border-radius: 4px; margin-bottom: 5px; font-size: 11px;';
+                div.innerHTML = `
+                    <strong>${moment.time_seconds.toFixed(0)}s</strong> - ${moment.description}
+                    <div style="color: #ff6b6b; font-size: 10px; margin-top: 2px;">GM = ${moment.gm_value.toFixed(3)}m</div>
+                `;
+                critical.appendChild(div);
+            });
+        } else {
+            critical.innerHTML = '<div style="color: #2ed573; font-size: 11px; text-align: center; padding: 10px;">✅ 无危险时刻，船舶状态良好</div>';
+        }
+
+        resultsDiv.style.display = 'block';
+    }
+
+    initDoorControls() {
+        this.doorStates = {};
+        this.updateDoorControls();
+
+        document.getElementById('interactive-simulate-btn').addEventListener('click', async () => {
+            const damageInput = document.getElementById('interactive-damage').value;
+            const severity = parseFloat(document.getElementById('interactive-severity').value);
+            
+            if (!damageInput) {
+                alert('请输入初始破损舱室');
+                return;
+            }
+
+            const compartments = damageInput.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n));
+            const doorStatesArray = Object.entries(this.doorStates).map(([id, isOpen]) => ({
+                bulkhead_id: parseInt(id),
+                is_open: isOpen,
+                last_changed: new Date().toISOString()
+            }));
+
+            const payload = {
+                ship_id: this.currentShipId,
+                flooded_compartments: compartments,
+                damage_severity: severity,
+                door_states: doorStatesArray
+            };
+
+            try {
+                const btn = document.getElementById('interactive-simulate-btn');
+                btn.textContent = '仿真中...';
+                btn.disabled = true;
+                const response = await fetch('/api/simulate/interactive', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    this.handleSimulationResult(result);
+                    this.renderInteractiveResult(result, doorStatesArray);
+                }
+            } catch (error) {
+                console.error('Interactive simulation failed:', error);
+            } finally {
+                const btn = document.getElementById('interactive-simulate-btn');
+                btn.textContent = '基于当前舱门状态仿真';
+                btn.disabled = false;
+            }
+        });
+    }
+
+    updateDoorControls() {
+        const container = document.getElementById('door-controls');
+        if (!container || !this.currentShipConfig) return;
+
+        container.innerHTML = '';
+        const numDoors = this.currentShipConfig.compartment_count - 1;
+
+        for (let i = 0; i < numDoors; i++) {
+            if (this.doorStates[i] === undefined) {
+                this.doorStates[i] = false;
+            }
+
+            const div = document.createElement('div');
+            div.className = 'door-control';
+            
+            const leftName = this.currentShipConfig.compartment_names[i] || `舱${i}`;
+            const rightName = this.currentShipConfig.compartment_names[i + 1] || `舱${i + 1}`;
+            
+            div.innerHTML = `
+                <span class="door-name">${i}号舱壁 (${leftName} ↔ ${rightName})</span>
+                <span class="door-status ${this.doorStates[i] ? 'open' : 'closed'}" id="door-status-${i}">
+                    ${this.doorStates[i] ? '开启' : '关闭'}
+                </span>
+                <label class="switch">
+                    <input type="checkbox" id="door-${i}" ${this.doorStates[i] ? 'checked' : ''} data-bulkhead="${i}" />
+                    <span class="slider"></span>
+                </label>
+            `;
+            container.appendChild(div);
+
+            div.querySelector('input').addEventListener('change', async (e) => {
+                const bulkheadId = parseInt(e.target.dataset.bulkhead);
+                const isOpen = e.target.checked;
+                this.doorStates[bulkheadId] = isOpen;
+                
+                document.getElementById(`door-status-${bulkheadId}`).textContent = isOpen ? '开启' : '关闭';
+                document.getElementById(`door-status-${bulkheadId}`).className = `door-status ${isOpen ? 'open' : 'closed'}`;
+
+                try {
+                    await fetch('/api/door', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            ship_id: this.currentShipId,
+                            bulkhead_id: bulkheadId,
+                            open: isOpen
+                        })
+                    });
+                } catch (error) {
+                    console.error('Door control failed:', error);
+                }
+            });
+        }
+    }
+
+    renderInteractiveResult(result, doorStates) {
+        const resultsDiv = document.getElementById('interactive-result');
+        const conclusion = document.getElementById('interactive-conclusion');
+        
+        const openDoors = doorStates.filter(d => d.is_open).length;
+        const totalDoors = doorStates.length;
+        const floodedCount = result.flooded_compartments.length;
+
+        let message = '';
+        if (result.is_safe) {
+            message = `✅ <strong>船舶保持安全！</strong><br><br>`;
+        } else {
+            message = `❌ <strong>船舶处于危险状态！</strong><br><br>`;
+        }
+
+        message += `
+            <strong>操作分析：</strong>您开启了 ${openDoors}/${totalDoors} 道舱门，初始破损 ${result.flooded_compartments.length} 个舱室。<br><br>
+            <strong>仿真结果：</strong><br>
+            • 最终进水舱室: ${floodedCount} 个<br>
+            • 最终吃水: ${result.final_draft.toFixed(2)} m<br>
+            • 初稳心高 GM: ${result.metacentric_height.toFixed(3)} m<br>
+            • 横倾角: ${result.final_heel_angle.toFixed(1)}°<br>
+            • 储备浮力: ${result.reserve_buoyancy.toFixed(1)}%<br><br>
+            <strong>教育提示：</strong>${openDoors > 0 ? 
+                '关闭水密舱门可以有效阻止进水蔓延！水密隔舱的抗沉效果取决于舱门是否保持水密。' : 
+                '所有舱门紧闭，水密隔舱发挥了最大效能！这展示了水密隔舱技术的核心原理——通过封闭舱室限制进水范围。'}
+        `;
+
+        conclusion.innerHTML = message;
+        resultsDiv.style.display = 'block';
     }
 }
 

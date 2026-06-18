@@ -1,0 +1,35 @@
+{
+    "ship_id": "modern_cargo_001",
+    "ship_name": "现代散货船（30000DWT）",
+    "ship_type": "modern",
+    "dynasty": "现代",
+    "historical_description": "现代散货船采用SOLAS公约标准的水密分舱设计，配备双层底、边舱，满足破损稳性要求。与古代水密隔舱一脉相承但更加科学化。",
+    "length_overall": 180.0,
+    "beam": 30.0,
+    "depth": 15.0,
+    "design_draft": 10.0,
+    "displacement": 35000.0,
+    "compartment_count": 8,
+    "compartment_names": [
+        "艏尖舱", "No.1货舱", "No.2货舱", "No.3货舱", "No.4货舱",
+        "No.5货舱", "机舱", "艉尖舱"
+    ],
+    "compartment_lengths": [15.0, 28.0, 28.0, 28.0, 28.0, 28.0, 18.0, 7.0],
+    "compartment_volumes": [800.0, 7500.0, 7500.0, 7500.0, 7500.0, 7500.0, 4000.0, 300.0],
+    "watertight_bulkheads": [15.0, 43.0, 71.0, 99.0, 127.0, 155.0, 173.0],
+    "characteristics": {
+        "hull_form": "球鼻艏，双层底，方艉",
+        "primary_use": "远洋散货运输",
+        "notable_feature": "SOLAS标准，满足一舱不沉制",
+        "max_safe_flooded": 1,
+        "double_bottom": true,
+        "double_side": true,
+        "solas_compliant": true
+    },
+    "comparison_with_ancient": {
+        "technology_origin": "中国古代水密隔舱技术（唐代）→ 18世纪传入欧洲 → 现代SOLAS标准",
+        "similarity": "横向水密舱壁分隔舱室的核心思想完全一致",
+        "difference": "现代船舶增加双层底、边舱、空气管、测深管等，计算方法采用SOLAS破损稳性标准",
+        "efficiency_gain": "现代分舱效率约为古代的2.3倍（单位排水量的抗沉能力）"
+    }
+}

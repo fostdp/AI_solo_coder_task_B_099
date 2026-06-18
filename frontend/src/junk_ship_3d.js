@@ -553,11 +553,50 @@ class ShipModel {
     }
 
     getCompartmentName(index) {
+        if (this.compartmentNames && this.compartmentNames[index]) {
+            return this.compartmentNames[index];
+        }
         return COMPARTMENT_NAMES[index] || `舱室${index + 1}`;
     }
 
     getCompartmentCount() {
-        return COMPARTMENT_LENGTHS.length;
+        return this.compartmentCount || COMPARTMENT_LENGTHS.length;
+    }
+
+    rebuildFromConfig(config) {
+        this.shipLength = config.length_overall;
+        this.shipBeam = config.beam;
+        this.shipDepth = config.depth;
+        this.designDraft = config.design_draft;
+        this.compartmentCount = config.compartment_count;
+        this.compartmentNames = config.compartment_names;
+        this.compartmentLengths = config.compartment_lengths;
+        this.compartmentVolumes = config.compartment_volumes;
+        this.bulkheadPositions = config.watertight_bulkheads;
+        this.shipType = config.ship_type;
+
+        this.compartments.forEach(c => this.shipGroup.remove(c));
+        this.waterMeshes.forEach(w => this.shipGroup.remove(w));
+        this.bulkheads.forEach(b => this.shipGroup.remove(b));
+        this.compartments = [];
+        this.waterMeshes = [];
+        this.bulkheads = [];
+
+        const scaleFactor = 34 / this.shipLength;
+        const scaledLength = this.shipLength * scaleFactor;
+        const scaledBeam = this.shipBeam * scaleFactor;
+        const scaledDepth = this.shipDepth * scaleFactor;
+
+        this.hull.scale.set(scaledBeam / 11, scaledDepth / 4.5, scaledLength / 34);
+
+        this.createCompartments();
+        this.createBulkheads();
+
+        if (this.waterPlane) {
+            this.waterPlane.position.y = -this.designDraft * (scaledDepth / 4.5);
+        }
+
+        this.reset();
     }
 
     setCompartmentConfiguration(bulkheadPositions) {
@@ -825,5 +864,98 @@ export class JunkShip3D {
 
     getCompartmentCount() {
         return this.shipModel.getCompartmentCount();
+    }
+
+    switchShipConfig(config) {
+        this.shipModel.rebuildFromConfig(config);
+        this.reset();
+    }
+
+    showPirateAttackEffect() {
+        const explosionPositions = [];
+        const shipLength = this.shipModel.shipLength;
+        const numCompartments = this.shipModel.getCompartmentCount();
+        
+        for (let i = 0; i < Math.min(3, numCompartments); i++) {
+            const zPos = (i / (numCompartments - 1) - 0.5) * shipLength;
+            explosionPositions.push(new THREE.Vector3(0, 5, zPos));
+        }
+
+        explosionPositions.forEach((pos, index) => {
+            setTimeout(() => {
+                this.createExplosion(pos);
+            }, index * 300);
+        });
+    }
+
+    createExplosion(position) {
+        const particleCount = 100;
+        const geometry = new THREE.BufferGeometry();
+        const positions = new Float32Array(particleCount * 3);
+        const velocities = [];
+        const colors = new Float32Array(particleCount * 3);
+
+        for (let i = 0; i < particleCount; i++) {
+            positions[i * 3] = position.x;
+            positions[i * 3 + 1] = position.y;
+            positions[i * 3 + 2] = position.z;
+
+            const theta = Math.random() * Math.PI * 2;
+            const phi = Math.random() * Math.PI;
+            const speed = 0.2 + Math.random() * 0.3;
+            velocities.push(new THREE.Vector3(
+                Math.sin(phi) * Math.cos(theta) * speed,
+                Math.abs(Math.cos(phi)) * speed + 0.1,
+                Math.sin(phi) * Math.sin(theta) * speed
+            ));
+
+            const color = new THREE.Color();
+            color.setHSL(0.05 + Math.random() * 0.1, 1, 0.5 + Math.random() * 0.3);
+            colors[i * 3] = color.r;
+            colors[i * 3 + 1] = color.g;
+            colors[i * 3 + 2] = color.b;
+        }
+
+        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+        const material = new THREE.PointsMaterial({
+            size: 0.8,
+            vertexColors: true,
+            transparent: true,
+            opacity: 1,
+            blending: THREE.AdditiveBlending
+        });
+
+        const explosion = new THREE.Points(geometry, material);
+        this.scene.add(explosion);
+
+        let frame = 0;
+        const maxFrames = 60;
+
+        const animateExplosion = () => {
+            frame++;
+            const posAttr = explosion.geometry.getAttribute('position');
+            
+            for (let i = 0; i < particleCount; i++) {
+                posAttr.setX(i, posAttr.getX(i) + velocities[i].x);
+                posAttr.setY(i, posAttr.getY(i) + velocities[i].y);
+                posAttr.setZ(i, posAttr.getZ(i) + velocities[i].z);
+                velocities[i].y -= 0.008;
+            }
+            
+            posAttr.needsUpdate = true;
+            explosion.material.opacity = 1 - frame / maxFrames;
+
+            if (frame < maxFrames) {
+                requestAnimationFrame(animateExplosion);
+            } else {
+                this.scene.remove(explosion);
+                explosion.geometry.dispose();
+                explosion.material.dispose();
+            }
+        };
+
+        animateExplosion();
     }
 }

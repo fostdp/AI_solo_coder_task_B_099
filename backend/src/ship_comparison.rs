@@ -431,3 +431,228 @@ async fn run_scenario_for_comparison(
         reserve_buoyancy: result.reserve_buoyancy,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::DamageParams;
+
+    fn default_params() -> DamageParams {
+        DamageParams::default()
+    }
+
+    #[test]
+    fn test_get_builtin_ship_configs_count() {
+        let ships = get_builtin_ship_configs();
+        assert_eq!(ships.len(), 5, "应该有5艘内置船舶配置");
+    }
+
+    #[test]
+    fn test_get_builtin_ship_configs_ids_unique() {
+        let ships = get_builtin_ship_configs();
+        let ids: std::collections::HashSet<_> = ships.iter().map(|s| s.ship_id.clone()).collect();
+        assert_eq!(ids.len(), ships.len(), "所有船舶ID应该唯一");
+    }
+
+    #[test]
+    fn test_get_builtin_ship_configs_basic_fields() {
+        let ships = get_builtin_ship_configs();
+        for ship in &ships {
+            assert!(!ship.ship_id.is_empty(), "船舶ID不应为空");
+            assert!(!ship.ship_name.is_empty(), "船舶名称不应为空");
+            assert!(ship.length_overall > 0.0, "总长应大于0: {}", ship.ship_id);
+            assert!(ship.displacement > 0.0, "排水量应大于0: {}", ship.ship_id);
+            assert!(ship.compartment_count > 0, "隔舱数应大于0: {}", ship.ship_id);
+        }
+    }
+
+    #[test]
+    fn test_get_all_ships_list() {
+        let response = get_all_ships_list();
+        assert_eq!(response.ships.len(), 5, "列表应返回5艘船");
+        for entry in &response.ships {
+            assert!(!entry.ship_id.is_empty());
+            assert!(!entry.ship_name.is_empty());
+            assert!(entry.compartment_count > 0);
+            assert!(entry.length_overall > 0.0);
+        }
+    }
+
+    #[test]
+    fn test_get_ship_config_extended_valid() {
+        let config = get_ship_config_extended("quanzhou_song_001");
+        assert!(config.is_some(), "应该能找到泉州宋船");
+        let config = config.unwrap();
+        assert_eq!(config.ship_id, "quanzhou_song_001");
+        assert!(config.compartment_count >= 10);
+    }
+
+    #[test]
+    fn test_get_ship_config_extended_invalid() {
+        let config = get_ship_config_extended("nonexistent_ship_id");
+        assert!(config.is_none(), "不存在的船应该返回None");
+    }
+
+    #[test]
+    fn test_get_ship_config_extended_empty() {
+        let config = get_ship_config_extended("");
+        assert!(config.is_none(), "空ID应该返回None");
+    }
+
+    #[test]
+    fn test_compare_ships_two_ships_normal() {
+        let ship_ids = vec![
+            "quanzhou_song_001".to_string(),
+            "fu_ship_001".to_string(),
+        ];
+        let result = compare_ships(&ship_ids, &default_params());
+
+        assert_eq!(result.ships.len(), 2, "应该对比2艘船");
+        assert!(!result.comparison_metrics.is_empty(), "应该有对比指标");
+        assert!(!result.conclusion.is_empty(), "应该有结论");
+        assert!(result.conclusion.contains("最优"));
+    }
+
+    #[test]
+    fn test_compare_ships_three_ancient_ships() {
+        let ship_ids = vec![
+            "quanzhou_song_001".to_string(),
+            "fu_ship_001".to_string(),
+            "sha_ship_001".to_string(),
+            "guang_ship_001".to_string(),
+        ];
+        let result = compare_ships(&ship_ids, &default_params());
+
+        assert_eq!(result.ships.len(), 4);
+        assert!(result.comparison_metrics.len() >= 5);
+
+        let metric_names: Vec<_> = result.comparison_metrics.iter().map(|m| m.name.as_str()).collect();
+        assert!(metric_names.contains(&"总长"));
+        assert!(metric_names.contains(&"排水量"));
+        assert!(metric_names.contains(&"隔舱数量"));
+        assert!(metric_names.contains(&"平均舱长"));
+        assert!(metric_names.contains(&"最大可进水舱数"));
+    }
+
+    #[test]
+    fn test_compare_ships_ancient_vs_modern() {
+        let ship_ids = vec![
+            "quanzhou_song_001".to_string(),
+            "modern_cargo_001".to_string(),
+        ];
+        let result = compare_ships(&ship_ids, &default_params());
+
+        assert!(result.conclusion.contains("SOLAS") || result.conclusion.contains("一脉相承"),
+                "跨时代对比应该提到SOLAS或一脉相承");
+    }
+
+    #[test]
+    fn test_compare_ships_single_ship() {
+        let ship_ids = vec!["quanzhou_song_001".to_string()];
+        let result = compare_ships(&ship_ids, &default_params());
+
+        assert_eq!(result.ships.len(), 1, "单船对比也应返回1艘船的数据");
+        assert_eq!(result.conclusion, "请选择至少两艘船舶进行对比",
+                "单船对比应该提示需要至少两艘船");
+    }
+
+    #[test]
+    fn test_compare_ships_empty_list() {
+        let ship_ids: Vec<String> = vec![];
+        let result = compare_ships(&ship_ids, &default_params());
+
+        assert!(result.ships.is_empty(), "空列表应返回空船舶列表");
+        assert!(!result.comparison_metrics.is_empty(), "即使空列表指标列表也应存在");
+    }
+
+    #[test]
+    fn test_compare_ships_nonexistent() {
+        let ship_ids = vec![
+            "fake_ship_1".to_string(),
+            "fake_ship_2".to_string(),
+        ];
+        let result = compare_ships(&ship_ids, &default_params());
+
+        assert!(result.ships.is_empty(), "不存在的船应该返回空列表");
+    }
+
+    #[test]
+    fn test_compare_ships_mixed_valid_invalid() {
+        let ship_ids = vec![
+            "quanzhou_song_001".to_string(),
+            "nonexistent".to_string(),
+        ];
+        let result = compare_ships(&ship_ids, &default_params());
+
+        assert_eq!(result.ships.len(), 1, "应该只保留有效的那艘船");
+        assert_eq!(result.ships[0].ship_id, "quanzhou_song_001");
+    }
+
+    #[test]
+    fn test_compare_ships_max_flooded_metric_sane() {
+        let ship_ids = vec![
+            "quanzhou_song_001".to_string(),
+            "fu_ship_001".to_string(),
+        ];
+        let result = compare_ships(&ship_ids, &default_params());
+
+        let max_flooded = result.comparison_metrics.iter()
+            .find(|m| m.name == "最大可进水舱数")
+            .expect("应该有最大可进水舱数指标");
+
+        for (_, &value) in &max_flooded.ship_values {
+            assert!(value >= 0.0, "最大可进水舱数不应为负");
+            assert!(value <= 20.0, "最大可进水舱数不应超过20");
+        }
+    }
+
+    #[test]
+    fn test_generate_era_key_metrics() {
+        let ships = get_builtin_ship_configs();
+        let ancient = ships.iter().find(|s| s.ship_id == "quanzhou_song_001").unwrap();
+        let modern = ships.iter().find(|s| s.ship_id == "modern_cargo_001").unwrap();
+
+        let metrics = generate_era_key_metrics(ancient, modern);
+
+        assert_eq!(metrics.len(), 5, "跨时代关键指标应该有5项");
+        assert!(metrics.iter().any(|m| m.name == "分舱效率系数"));
+
+        let efficiency = metrics.iter().find(|m| m.name == "分舱效率系数").unwrap();
+        assert_eq!(efficiency.ship_values.get(&ancient.ship_id).copied(), Some(1.0),
+                "古船分舱效率系数应为基准1.0");
+        assert!(efficiency.ship_values.get(&modern.ship_id).copied().unwrap_or(0.0) > 1.0,
+                "现代船分舱效率系数应大于1.0");
+    }
+
+    #[test]
+    fn test_load_ship_config_from_json_structure() {
+        let ships = get_builtin_ship_configs();
+
+        for ship in &ships {
+            assert!(!ship.compartment_names.is_empty(),
+                    "船舶{}应该有舱室名称", ship.ship_id);
+            assert_eq!(ship.compartment_names.len() as u8, ship.compartment_count,
+                    "舱室名称数量应等于隔舱数: {}", ship.ship_id);
+        }
+    }
+
+    #[test]
+    fn test_ship_characteristics_present() {
+        let ships = get_builtin_ship_configs();
+        for ship in &ships {
+            assert!(!ship.characteristics.hull_form.is_empty());
+            assert!(!ship.characteristics.primary_use.is_empty());
+            assert!(ship.characteristics.max_safe_flooded > 0);
+        }
+    }
+
+    #[test]
+    fn test_modern_ship_has_advanced_features() {
+        let modern = get_ship_config_extended("modern_cargo_001").unwrap();
+        assert!(modern.characteristics.solas_compliant, "现代船应符合SOLAS");
+        assert!(modern.characteristics.double_bottom || modern.characteristics.double_side,
+                "现代船应有双层底或边舱");
+        assert!(modern.comparison_with_ancient.is_some(),
+                "现代船应有与古船的对比信息");
+    }
+}

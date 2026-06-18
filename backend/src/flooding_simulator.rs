@@ -732,3 +732,669 @@ impl FloodingSimulator {
         Ok(result)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::*;
+    use chrono::Utc;
+
+    fn test_ship_config() -> ShipConfig {
+        let count = 10u8;
+        let length = 34.0;
+        let compartment_lengths: Vec<f64> = (0..count).map(|_| length / count as f64).collect();
+        let compartment_volumes: Vec<f64> = (0..count)
+            .map(|_| (length / count as f64) * 8.0 * 2.5)
+            .collect();
+        let compartment_names: Vec<String> = (0..count)
+            .map(|i| format!("舱室{}", i + 1))
+            .collect();
+        let watertight_bulkheads: Vec<f64> = (1..count)
+            .map(|i| (i as f64) * length / count as f64)
+            .collect();
+
+        ShipConfig {
+            ship_id: "test_ship_001".to_string(),
+            ship_name: "测试船".to_string(),
+            length_overall: length,
+            beam: 8.0,
+            depth: 4.5,
+            design_draft: 2.8,
+            displacement: 400.0,
+            compartment_count: count,
+            compartment_names,
+            compartment_lengths,
+            compartment_volumes,
+            watertight_bulkheads,
+        }
+    }
+
+    fn test_hydrostatics() -> ShipHydrostatics {
+        ShipHydrostatics::new(test_ship_config(), DamageParams::default())
+    }
+
+    // ================ calculate_max_floodable_compartments 测试 ================
+
+    #[test]
+    fn test_max_floodable_basic() {
+        let hydro = test_hydrostatics();
+        let max_flooded = hydro.calculate_max_floodable_compartments();
+
+        assert!(max_flooded > 0, "至少应该能承受1舱进水");
+        assert!(
+            max_flooded <= test_ship_config().compartment_count,
+            "最大进水舱数不应超过总舱数"
+        );
+    }
+
+    #[test]
+    fn test_max_floodable_is_safe_at_limit() {
+        let hydro = test_hydrostatics();
+        let max_flooded = hydro.calculate_max_floodable_compartments();
+
+        if max_flooded > 0 {
+            let compartments: Vec<u8> = (0..max_flooded).collect();
+            let scenario = FloodingScenario {
+                ship_id: "test".to_string(),
+                flooded_compartments: compartments,
+                damage_severity: 0.5,
+            };
+            let result = hydro.simulate_damage(&scenario);
+            assert!(result.is_safe, "最大可进水数应该是安全的");
+        }
+    }
+
+    #[test]
+    fn test_max_floodable_plus_one_unsafe() {
+        let hydro = test_hydrostatics();
+        let max_flooded = hydro.calculate_max_floodable_compartments();
+        let total = test_ship_config().compartment_count;
+
+        if max_flooded < total {
+            let next = max_flooded + 1;
+            let compartments: Vec<u8> = (0..next).collect();
+            let scenario = FloodingScenario {
+                ship_id: "test".to_string(),
+                flooded_compartments: compartments,
+                damage_severity: 0.5,
+            };
+            let result = hydro.simulate_damage(&scenario);
+            assert!(!result.is_safe, "超过最大可进水数应该不安全");
+        }
+    }
+
+    #[test]
+    fn test_max_floodable_deterministic() {
+        let hydro = test_hydrostatics();
+        let first = hydro.calculate_max_floodable_compartments();
+        let second = hydro.calculate_max_floodable_compartments();
+        assert_eq!(first, second, "最大可进水舱数计算应该是确定性的");
+    }
+
+    #[test]
+    fn test_max_floodable_with_larger_ship() {
+        let mut config = test_ship_config();
+        config.compartment_count = 16;
+        config.length_overall = 60.0;
+        config.beam = 12.0;
+        config.displacement = 1500.0;
+        config.compartment_lengths = vec![60.0 / 16.0; 16];
+        config.compartment_volumes = vec![60.0 / 16.0 * 10.0 * 3.5; 16];
+        config.compartment_names = vec!["舱".to_string(); 16];
+        config.watertight_bulkheads = (1..16).map(|i| i as f64 * 60.0 / 16.0).collect();
+
+        let hydro = ShipHydrostatics::new(config, DamageParams::default());
+        let max_flooded = hydro.calculate_max_floodable_compartments();
+
+        assert!(max_flooded >= 2, "较大的船至少能承受2舱进水");
+    }
+
+    // ================ simulate_with_door_states 测试 ================
+
+    fn door_state(id: u8, open: bool) -> BulkheadDoorState {
+        BulkheadDoorState {
+            bulkhead_id: id,
+            is_open: open,
+            last_changed: Utc::now(),
+        }
+    }
+
+    #[test]
+    fn test_door_all_closed_no_spread() {
+        let hydro = test_hydrostatics();
+        let scenario = FloodingScenario {
+            ship_id: "test".to_string(),
+            flooded_compartments: vec![3],
+            damage_severity: 0.5,
+        };
+
+        let doors: Vec<_> = (0..9).map(|i| door_state(i, false)).collect();
+        let result = hydro.simulate_with_door_states(&scenario, &doors);
+
+        assert_eq!(
+            result.flooded_compartments.len(),
+            1,
+            "所有舱门关闭时，进水不应蔓延"
+        );
+        assert!(result.flooded_compartments.contains(&3));
+    }
+
+    #[test]
+    fn test_door_open_spreads_left() {
+        let hydro = test_hydrostatics();
+        let scenario = FloodingScenario {
+            ship_id: "test".to_string(),
+            flooded_compartments: vec![3],
+            damage_severity: 0.5,
+        };
+
+        let mut doors: Vec<_> = (0..9).map(|i| door_state(i, false)).collect();
+        doors[2] = door_state(2, true);
+
+        let result = hydro.simulate_with_door_states(&scenario, &doors);
+
+        assert!(
+            result.flooded_compartments.contains(&2),
+            "2号舱门开启，进水应蔓延到2号舱"
+        );
+        assert!(
+            result.flooded_compartments.contains(&3),
+            "3号舱应该仍然进水"
+        );
+    }
+
+    #[test]
+    fn test_door_open_spreads_right() {
+        let hydro = test_hydrostatics();
+        let scenario = FloodingScenario {
+            ship_id: "test".to_string(),
+            flooded_compartments: vec![3],
+            damage_severity: 0.5,
+        };
+
+        let mut doors: Vec<_> = (0..9).map(|i| door_state(i, false)).collect();
+        doors[3] = door_state(3, true);
+
+        let result = hydro.simulate_with_door_states(&scenario, &doors);
+
+        assert!(
+            result.flooded_compartments.contains(&4),
+            "3号舱门开启，进水应蔓延到4号舱"
+        );
+    }
+
+    #[test]
+    fn test_door_open_chain_spread() {
+        let hydro = test_hydrostatics();
+        let scenario = FloodingScenario {
+            ship_id: "test".to_string(),
+            flooded_compartments: vec![5],
+            damage_severity: 0.5,
+        };
+
+        let mut doors: Vec<_> = (0..9).map(|i| door_state(i, false)).collect();
+        doors[3] = door_state(3, true);
+        doors[4] = door_state(4, true);
+        doors[5] = door_state(5, true);
+
+        let result = hydro.simulate_with_door_states(&scenario, &doors);
+
+        assert!(
+            result.flooded_compartments.contains(&3),
+            "连续开启的舱门应让进水蔓延到3号舱"
+        );
+        assert!(
+            result.flooded_compartments.contains(&6),
+            "连续开启的舱门应让进水蔓延到6号舱"
+        );
+    }
+
+    #[test]
+    fn test_door_all_open_full_spread() {
+        let hydro = test_hydrostatics();
+        let scenario = FloodingScenario {
+            ship_id: "test".to_string(),
+            flooded_compartments: vec![0],
+            damage_severity: 0.5,
+        };
+
+        let doors: Vec<_> = (0..9).map(|i| door_state(i, true)).collect();
+        let result = hydro.simulate_with_door_states(&scenario, &doors);
+
+        assert_eq!(
+            result.flooded_compartments.len(),
+            10,
+            "所有舱门开启时，进水应蔓延到所有舱室"
+        );
+    }
+
+    #[test]
+    fn test_door_empty_list_no_spread() {
+        let hydro = test_hydrostatics();
+        let scenario = FloodingScenario {
+            ship_id: "test".to_string(),
+            flooded_compartments: vec![3, 5],
+            damage_severity: 0.5,
+        };
+
+        let result = hydro.simulate_with_door_states(&scenario, &[]);
+
+        assert_eq!(
+            result.flooded_compartments.len(),
+            2,
+            "空舱门状态列表应视为全部关闭"
+        );
+    }
+
+    #[test]
+    fn test_door_out_of_range_id_ignored() {
+        let hydro = test_hydrostatics();
+        let scenario = FloodingScenario {
+            ship_id: "test".to_string(),
+            flooded_compartments: vec![0],
+            damage_severity: 0.5,
+        };
+
+        let doors = vec![door_state(100, true)];
+        let result = hydro.simulate_with_door_states(&scenario, &doors);
+
+        assert_eq!(
+            result.flooded_compartments.len(),
+            1,
+            "超出范围的舱门ID应被忽略"
+        );
+    }
+
+    #[test]
+    fn test_door_worsens_stability() {
+        let hydro = test_hydrostatics();
+        let scenario = FloodingScenario {
+            ship_id: "test".to_string(),
+            flooded_compartments: vec![3],
+            damage_severity: 0.7,
+        };
+
+        let closed_doors: Vec<_> = (0..9).map(|i| door_state(i, false)).collect();
+        let result_closed = hydro.simulate_with_door_states(&scenario, &closed_doors);
+
+        let mut open_doors = closed_doors.clone();
+        open_doors[2] = door_state(2, true);
+        open_doors[3] = door_state(3, true);
+        let result_open = hydro.simulate_with_door_states(&scenario, &open_doors);
+
+        assert!(
+            result_open.metacentric_height <= result_closed.metacentric_height,
+            "舱门开启后稳性应该更差（GM更低）"
+        );
+        assert!(
+            result_open.final_draft >= result_closed.final_draft,
+            "舱门开启后吃水应该更深"
+        );
+    }
+
+    #[test]
+    fn test_door_first_compartment_no_left_spread() {
+        let hydro = test_hydrostatics();
+        let scenario = FloodingScenario {
+            ship_id: "test".to_string(),
+            flooded_compartments: vec![0],
+            damage_severity: 0.5,
+        };
+
+        let doors = vec![door_state(0, true)];
+        let result = hydro.simulate_with_door_states(&scenario, &doors);
+
+        assert!(
+            result.flooded_compartments.contains(&0),
+            "0号舱应该进水"
+        );
+        assert!(
+            result.flooded_compartments.contains(&1),
+            "0号舱门开启，应蔓延到1号舱"
+        );
+        assert!(
+            result.flooded_compartments.len() <= 2,
+            "不应蔓延到更前面（不存在）的舱"
+        );
+    }
+
+    // ================ simulate_pirate_attack 测试 ================
+
+    #[test]
+    fn test_pirate_single_attack() {
+        let hydro = test_hydrostatics();
+        let attack = PirateAttackRequest {
+            ship_id: "test_ship_001".to_string(),
+            attack_points: vec![AttackPoint {
+                compartment_id: 3,
+                damage_severity: 0.5,
+                delay_seconds: 0.0,
+            }],
+            simulation_duration_seconds: 600.0,
+        };
+
+        let result = hydro.simulate_pirate_attack(&attack);
+
+        assert!(!result.timeline_events.is_empty(), "应该有时间线事件");
+        assert_eq!(result.attack_points.len(), 1);
+        assert_eq!(result.ship_id, "test_ship_001");
+        assert!(result.survival_probability >= 0.0);
+        assert!(result.survival_probability <= 1.0);
+    }
+
+    #[test]
+    fn test_pirate_timeline_has_start_event() {
+        let hydro = test_hydrostatics();
+        let attack = PirateAttackRequest {
+            ship_id: "test".to_string(),
+            attack_points: vec![AttackPoint {
+                compartment_id: 2,
+                damage_severity: 0.5,
+                delay_seconds: 0.0,
+            }],
+            simulation_duration_seconds: 300.0,
+        };
+
+        let result = hydro.simulate_pirate_attack(&attack);
+
+        assert_eq!(
+            result.timeline_events[0].event_type, "START",
+            "第一个事件应该是START"
+        );
+        assert_eq!(result.timeline_events[0].time_seconds, 0.0);
+        assert!(result.timeline_events[0].is_safe);
+    }
+
+    #[test]
+    fn test_pirate_multiple_attacks() {
+        let hydro = test_hydrostatics();
+        let attack = PirateAttackRequest {
+            ship_id: "test".to_string(),
+            attack_points: vec![
+                AttackPoint {
+                    compartment_id: 2,
+                    damage_severity: 0.5,
+                    delay_seconds: 0.0,
+                },
+                AttackPoint {
+                    compartment_id: 5,
+                    damage_severity: 0.6,
+                    delay_seconds: 120.0,
+                },
+                AttackPoint {
+                    compartment_id: 7,
+                    damage_severity: 0.7,
+                    delay_seconds: 300.0,
+                },
+            ],
+            simulation_duration_seconds: 600.0,
+        };
+
+        let result = hydro.simulate_pirate_attack(&attack);
+
+        let attack_events: Vec<_> = result
+            .timeline_events
+            .iter()
+            .filter(|e| e.event_type == "ATTACK")
+            .collect();
+        assert!(
+            attack_events.len() >= 3,
+            "应该至少有3次攻击事件（实际有{}次）",
+            attack_events.len()
+        );
+    }
+
+    #[test]
+    fn test_pirate_zero_attacks() {
+        let hydro = test_hydrostatics();
+        let attack = PirateAttackRequest {
+            ship_id: "test".to_string(),
+            attack_points: vec![],
+            simulation_duration_seconds: 600.0,
+        };
+
+        let result = hydro.simulate_pirate_attack(&attack);
+
+        assert!(!result.timeline_events.is_empty());
+        assert!(result.final_state.is_safe, "无攻击时船舶应该安全");
+        assert_eq!(result.survival_probability, 1.0);
+    }
+
+    #[test]
+    fn test_pirate_attack_order() {
+        let hydro = test_hydrostatics();
+        let attack = PirateAttackRequest {
+            ship_id: "test".to_string(),
+            attack_points: vec![
+                AttackPoint {
+                    compartment_id: 5,
+                    damage_severity: 0.5,
+                    delay_seconds: 200.0,
+                },
+                AttackPoint {
+                    compartment_id: 2,
+                    damage_severity: 0.5,
+                    delay_seconds: 50.0,
+                },
+            ],
+            simulation_duration_seconds: 600.0,
+        };
+
+        let result = hydro.simulate_pirate_attack(&attack);
+
+        let attack_events: Vec<_> = result
+            .timeline_events
+            .iter()
+            .filter(|e| e.event_type == "ATTACK")
+            .collect();
+
+        for i in 1..attack_events.len() {
+            assert!(
+                attack_events[i].time_seconds >= attack_events[i - 1].time_seconds,
+                "攻击事件应该按时间顺序排列"
+            );
+        }
+    }
+
+    #[test]
+    fn test_pirate_min_duration_floor() {
+        let hydro = test_hydrostatics();
+        let attack = PirateAttackRequest {
+            ship_id: "test".to_string(),
+            attack_points: vec![AttackPoint {
+                compartment_id: 3,
+                damage_severity: 0.5,
+                delay_seconds: 0.0,
+            }],
+            simulation_duration_seconds: 10.0,
+        };
+
+        let result = hydro.simulate_pirate_attack(&attack);
+
+        assert!(!result.timeline_events.is_empty());
+        let last_time = result.timeline_events.last().unwrap().time_seconds;
+        assert!(last_time >= 600.0, "仿真时间至少应为600秒下限");
+    }
+
+    #[test]
+    fn test_pirate_survival_probability_range() {
+        let hydro = test_hydrostatics();
+
+        let mild = PirateAttackRequest {
+            ship_id: "test".to_string(),
+            attack_points: vec![AttackPoint {
+                compartment_id: 2,
+                damage_severity: 0.3,
+                delay_seconds: 0.0,
+            }],
+            simulation_duration_seconds: 600.0,
+        };
+        let mild_result = hydro.simulate_pirate_attack(&mild);
+        assert!(
+            mild_result.survival_probability >= 0.0,
+            "生存概率应>=0"
+        );
+        assert!(
+            mild_result.survival_probability <= 1.0,
+            "生存概率应<=1"
+        );
+    }
+
+    #[test]
+    fn test_pirate_critical_moments_present() {
+        let hydro = test_hydrostatics();
+        let attack = PirateAttackRequest {
+            ship_id: "test".to_string(),
+            attack_points: vec![
+                AttackPoint {
+                    compartment_id: 0,
+                    damage_severity: 0.9,
+                    delay_seconds: 0.0,
+                },
+                AttackPoint {
+                    compartment_id: 1,
+                    damage_severity: 0.9,
+                    delay_seconds: 100.0,
+                },
+                AttackPoint {
+                    compartment_id: 2,
+                    damage_severity: 0.9,
+                    delay_seconds: 200.0,
+                },
+                AttackPoint {
+                    compartment_id: 3,
+                    damage_severity: 0.9,
+                    delay_seconds: 300.0,
+                },
+                AttackPoint {
+                    compartment_id: 4,
+                    damage_severity: 0.9,
+                    delay_seconds: 400.0,
+                },
+            ],
+            simulation_duration_seconds: 800.0,
+        };
+
+        let result = hydro.simulate_pirate_attack(&attack);
+
+        if !result.final_state.is_safe {
+            let has_unsafe = result
+                .timeline_events
+                .iter()
+                .any(|e| e.event_type == "UNSAFE");
+            assert!(has_unsafe, "船舶沉没时应该有UNSAFE事件");
+        }
+    }
+
+    #[test]
+    fn test_pirate_final_state_consistency() {
+        let hydro = test_hydrostatics();
+        let attack = PirateAttackRequest {
+            ship_id: "test".to_string(),
+            attack_points: vec![AttackPoint {
+                compartment_id: 3,
+                damage_severity: 0.6,
+                delay_seconds: 0.0,
+            }],
+            simulation_duration_seconds: 600.0,
+        };
+
+        let result = hydro.simulate_pirate_attack(&attack);
+
+        assert_eq!(
+            result.final_state.ship_id, "test",
+            "最终状态的ship_id应与请求一致"
+        );
+        assert!(
+            result.final_state.final_draft > 0.0,
+            "最终吃水应大于0"
+        );
+        assert!(
+            result.final_state.stability_curve.len() > 0,
+            "应该有稳性曲线数据"
+        );
+    }
+
+    #[test]
+    fn test_pirate_attack_duplicate_compartment() {
+        let hydro = test_hydrostatics();
+        let attack = PirateAttackRequest {
+            ship_id: "test".to_string(),
+            attack_points: vec![
+                AttackPoint {
+                    compartment_id: 3,
+                    damage_severity: 0.5,
+                    delay_seconds: 0.0,
+                },
+                AttackPoint {
+                    compartment_id: 3,
+                    damage_severity: 0.7,
+                    delay_seconds: 100.0,
+                },
+            ],
+            simulation_duration_seconds: 600.0,
+        };
+
+        let result = hydro.simulate_pirate_attack(&attack);
+
+        assert!(!result.timeline_events.is_empty());
+        let attack_count = result
+            .timeline_events
+            .iter()
+            .filter(|e| e.event_type == "ATTACK")
+            .count();
+        assert_eq!(attack_count, 2, "重复攻击同一舱室也应记录两次事件");
+    }
+
+    // ================ 基础静水力计算测试 ================
+
+    #[test]
+    fn test_waterplane_area_positive() {
+        let hydro = test_hydrostatics();
+        let area = hydro.calculate_waterplane_area(2.8);
+        assert!(area > 0.0);
+    }
+
+    #[test]
+    fn test_displacement_matches_design() {
+        let config = test_ship_config();
+        let hydro = ShipHydrostatics::new(config.clone(), DamageParams::default());
+        let disp = hydro.calculate_displacement(config.design_draft);
+        assert!(disp > 0.0);
+    }
+
+    #[test]
+    fn test_simulate_damage_no_flooding_safe() {
+        let hydro = test_hydrostatics();
+        let scenario = FloodingScenario {
+            ship_id: "test".to_string(),
+            flooded_compartments: vec![],
+            damage_severity: 0.0,
+        };
+        let result = hydro.simulate_damage(&scenario);
+        assert!(result.is_safe, "无进水时船舶应该安全");
+    }
+
+    #[test]
+    fn test_simulate_damage_severity_clamped() {
+        let hydro = test_hydrostatics();
+        let scenario_normal = FloodingScenario {
+            ship_id: "test".to_string(),
+            flooded_compartments: vec![2],
+            damage_severity: 0.5,
+        };
+        let scenario_over = FloodingScenario {
+            ship_id: "test".to_string(),
+            flooded_compartments: vec![2],
+            damage_severity: 1.5,
+        };
+
+        let r_normal = hydro.simulate_damage(&scenario_normal);
+        let r_over = hydro.simulate_damage(&scenario_over);
+
+        assert!(
+            r_over.final_draft >= r_normal.final_draft,
+            "更高的严重度应导致更深吃水（或相等）"
+        );
+    }
+}

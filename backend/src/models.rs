@@ -369,3 +369,240 @@ pub struct AllShipsResponse {
     pub ships: Vec<ShipListEntry>,
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Utc;
+
+    #[test]
+    fn test_damage_params_default() {
+        let params = DamageParams::default();
+        assert_eq!(params.gravity, 9.81);
+        assert_eq!(params.sea_water_density, 1025.0);
+        assert_eq!(params.permeability, 0.7);
+        assert!(params.min_metacentric_height > 0.0);
+        assert!(params.max_safe_heel_angle > 0.0);
+    }
+
+    #[test]
+    fn test_damage_params_clone() {
+        let p1 = DamageParams::default();
+        let p2 = p1.clone();
+        assert_eq!(p1.gravity, p2.gravity);
+        assert_eq!(p1.permeability, p2.permeability);
+    }
+
+    #[test]
+    fn test_flooding_scenario_serialization() {
+        let scenario = FloodingScenario {
+            ship_id: "test_001".to_string(),
+            flooded_compartments: vec![1, 2, 3],
+            damage_severity: 0.5,
+        };
+
+        let json = serde_json::to_string(&scenario).unwrap();
+        let deserialized: FloodingScenario = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized.ship_id, "test_001");
+        assert_eq!(deserialized.flooded_compartments, vec![1, 2, 3]);
+        assert_eq!(deserialized.damage_severity, 0.5);
+    }
+
+    #[test]
+    fn test_attack_point_serialization() {
+        let ap = AttackPoint {
+            compartment_id: 5,
+            damage_severity: 0.8,
+            delay_seconds: 120.0,
+        };
+
+        let json = serde_json::to_string(&ap).unwrap();
+        let result: AttackPoint = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(result.compartment_id, 5);
+        assert_eq!(result.damage_severity, 0.8);
+        assert_eq!(result.delay_seconds, 120.0);
+    }
+
+    #[test]
+    fn test_pirate_attack_request_serialization() {
+        let request = PirateAttackRequest {
+            ship_id: "test_ship".to_string(),
+            attack_points: vec![
+                AttackPoint {
+                    compartment_id: 2,
+                    damage_severity: 0.6,
+                    delay_seconds: 0.0,
+                },
+                AttackPoint {
+                    compartment_id: 5,
+                    damage_severity: 0.7,
+                    delay_seconds: 100.0,
+                },
+            ],
+            simulation_duration_seconds: 600.0,
+        };
+
+        let json = serde_json::to_string(&request).unwrap();
+        let result: PirateAttackRequest = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(result.ship_id, "test_ship");
+        assert_eq!(result.attack_points.len(), 2);
+        assert_eq!(result.simulation_duration_seconds, 600.0);
+    }
+
+    #[test]
+    fn test_bulkhead_door_state_serialization() {
+        let state = BulkheadDoorState {
+            bulkhead_id: 3,
+            is_open: true,
+            last_changed: Utc::now(),
+        };
+
+        let json = serde_json::to_string(&state).unwrap();
+        let result: BulkheadDoorState = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(result.bulkhead_id, 3);
+        assert_eq!(result.is_open, true);
+    }
+
+    #[test]
+    fn test_interactive_simulation_request_serialization() {
+        let request = InteractiveSimulationRequest {
+            ship_id: "test".to_string(),
+            flooded_compartments: vec![2],
+            damage_severity: 0.5,
+            door_states: vec![
+                BulkheadDoorState {
+                    bulkhead_id: 1,
+                    is_open: false,
+                    last_changed: Utc::now(),
+                },
+                BulkheadDoorState {
+                    bulkhead_id: 2,
+                    is_open: true,
+                    last_changed: Utc::now(),
+                },
+            ],
+        };
+
+        let json = serde_json::to_string(&request).unwrap();
+        let result: InteractiveSimulationRequest = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(result.ship_id, "test");
+        assert_eq!(result.flooded_compartments, vec![2]);
+        assert_eq!(result.door_states.len(), 2);
+        assert_eq!(result.door_states[1].is_open, true);
+    }
+
+    #[test]
+    fn test_comparison_metric_serialization() {
+        use std::collections::HashMap;
+
+        let mut values = HashMap::new();
+        values.insert("ship_a".to_string(), 34.0);
+        values.insert("ship_b".to_string(), 48.0);
+
+        let metric = ComparisonMetric {
+            name: "总长".to_string(),
+            ship_values: values,
+            unit: "m".to_string(),
+            description: "船舶总长".to_string(),
+        };
+
+        let json = serde_json::to_string(&metric).unwrap();
+        let result: ComparisonMetric = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(result.name, "总长");
+        assert_eq!(result.unit, "m");
+        assert_eq!(result.ship_values.len(), 2);
+    }
+
+    #[test]
+    fn test_ship_comparison_request_empty() {
+        let request = ShipComparisonRequest {
+            ship_ids: vec![],
+        };
+        let json = serde_json::to_string(&request).unwrap();
+        let result: ShipComparisonRequest = serde_json::from_str(&json).unwrap();
+        assert!(result.ship_ids.is_empty());
+    }
+
+    #[test]
+    fn test_era_comparison_request() {
+        let req = EraComparisonRequest {
+            ancient_ship_id: "quanzhou_song".to_string(),
+            modern_ship_id: "modern_cargo".to_string(),
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        let result: EraComparisonRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(result.ancient_ship_id, "quanzhou_song");
+        assert_eq!(result.modern_ship_id, "modern_cargo");
+    }
+
+    #[test]
+    fn test_door_control_request() {
+        let req = DoorControlRequest {
+            ship_id: "test".to_string(),
+            bulkhead_id: 5,
+            open: true,
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        let result: DoorControlRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(result.bulkhead_id, 5);
+        assert_eq!(result.open, true);
+    }
+
+    #[test]
+    fn test_timeline_event_types() {
+        let start = TimelineEvent {
+            time_seconds: 0.0,
+            event_type: "START".to_string(),
+            description: "开始".to_string(),
+            affected_compartments: vec![],
+            gm_value: 0.5,
+            is_safe: true,
+        };
+        assert!(start.is_safe);
+        assert_eq!(start.event_type, "START");
+
+        let unsafe_ev = TimelineEvent {
+            time_seconds: 100.0,
+            event_type: "UNSAFE".to_string(),
+            description: "危险".to_string(),
+            affected_compartments: vec![1, 2, 3],
+            gm_value: 0.1,
+            is_safe: false,
+        };
+        assert!(!unsafe_ev.is_safe);
+        assert_eq!(unsafe_ev.affected_compartments.len(), 3);
+    }
+
+    #[test]
+    fn test_stability_result_summary_default_safe() {
+        let summary = StabilityResultSummary {
+            is_safe: true,
+            final_draft: 2.8,
+            metacentric_height: 0.5,
+            righting_arm_max: 0.3,
+            sinking_time_seconds: 3600.0,
+            reserve_buoyancy: 30.0,
+        };
+        assert!(summary.is_safe);
+        assert!(summary.reserve_buoyancy > 0.0);
+        assert!(summary.metacentric_height > 0.0);
+    }
+
+    #[test]
+    fn test_critical_moment_fields() {
+        let cm = CriticalMoment {
+            time_seconds: 250.0,
+            description: "GM降至安全阈值以下".to_string(),
+            gm_value: 0.14,
+        };
+        assert_eq!(cm.time_seconds, 250.0);
+        assert!(cm.description.contains("GM"));
+        assert!(cm.gm_value < 0.15);
+    }
+}
+

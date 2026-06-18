@@ -1,12 +1,19 @@
 mod alarm_ws;
 mod clickhouse_client;
 mod compartment_optimizer;
+mod compute_pool;
+mod design_comparator;
 mod dtu_receiver;
+mod era_comparator;
+mod extreme_simulator;
 mod flooding_simulator;
 mod handlers;
+mod hydrostatics;
 mod metrics;
 mod models;
 mod ship_comparison;
+mod ship_configs;
+mod vr_compartment;
 
 use actix::prelude::*;
 use actix_cors::Cors;
@@ -135,6 +142,7 @@ async fn main() -> std::io::Result<()> {
         clickhouse: clickhouse_client,
         ws_server,
         default_config,
+        damage_params: damage_params.clone(),
     });
 
     tracing::info!("Starting server on {}:{}", server_host, server_port);

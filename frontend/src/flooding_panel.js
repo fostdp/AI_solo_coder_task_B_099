@@ -1,5 +1,9 @@
 import { Chart, registerables } from 'chart.js';
 import { JunkShip3D } from './junk_ship_3d.js';
+import { DesignComparator } from './components/design_comparator.js';
+import { EraComparator } from './components/era_comparator.js';
+import { ExtremeFloodingSimulator } from './components/extreme_simulator.js';
+import { VRCompartment } from './components/vr_compartment.js';
 
 Chart.register(...registerables);
 
@@ -20,12 +24,18 @@ class FloodingPanel {
         this.waterChart = null;
         this.ws = null;
         this.currentShipId = 'quanzhou_song_001';
+        this.currentShipConfig = null;
         this.draftHistory = [];
         this.timeLabels = [];
         this.waterLevelHistory = {};
         this.alarms = [];
         this.latestSensorData = null;
         this.latestSimulationResult = null;
+
+        this.designComparator = null;
+        this.eraComparator = null;
+        this.extremeSimulator = null;
+        this.vrCompartment = null;
 
         this.init();
     }
@@ -40,10 +50,53 @@ class FloodingPanel {
         this.initCompartmentList();
         this.initTabs();
         this.initShipSelector();
-        this.initComparison();
-        this.initEraComparison();
-        this.initPirateAttack();
-        this.initDoorControls();
+
+        this.initComponents();
+    }
+
+    initComponents() {
+        this.designComparator = new DesignComparator({
+            apiBase: API_BASE + '/api',
+            onResult: (result) => {
+                console.log('Design comparison result:', result);
+            }
+        });
+        this.designComparator.init();
+
+        this.eraComparator = new EraComparator({
+            apiBase: API_BASE + '/api',
+            onResult: (result) => {
+                console.log('Era comparison result:', result);
+            }
+        });
+        this.eraComparator.init();
+
+        this.extremeSimulator = new ExtremeFloodingSimulator({
+            apiBase: API_BASE + '/api',
+            currentShipId: this.currentShipId,
+            onResult: (result) => {
+                if (result.final_state) {
+                    this.handleSimulationResult(result.final_state);
+                }
+                if (window.ship3D) {
+                    window.ship3D.showPirateAttackEffect();
+                }
+            },
+            onShipUpdate: (state) => {
+                this.handleSimulationResult(state);
+            }
+        });
+
+        this.vrCompartment = new VRCompartment({
+            apiBase: API_BASE + '/api',
+            currentShipId: this.currentShipId,
+            onShipUpdate: (result) => {
+                this.handleSimulationResult(result);
+            },
+            onDoorChange: (bulkheadId, isOpen) => {
+                console.log(`Door ${bulkheadId} changed to ${isOpen}`);
+            }
+        });
     }
 
     initCharts() {
@@ -364,9 +417,20 @@ class FloodingPanel {
                 document.getElementById('ship-info-name').textContent = config.ship_name;
                 document.getElementById('ship-info-desc').textContent = 
                     `${config.dynasty} · ${config.historical_description}`;
+
+                this.updateComponentsForShip();
             }
         } catch (e) {
             console.error('Failed to load ship config:', e);
+        }
+    }
+
+    updateComponentsForShip() {
+        if (this.extremeSimulator && this.currentShipConfig) {
+            this.extremeSimulator.setShip(this.currentShipId, this.currentShipConfig);
+        }
+        if (this.vrCompartment && this.currentShipConfig) {
+            this.vrCompartment.setShip(this.currentShipId, this.currentShipConfig);
         }
     }
 
@@ -650,6 +714,7 @@ class FloodingPanel {
                         `${shipConfig.dynasty} · ${shipConfig.historical_description}`;
                     this.updateDoorControls();
                     this.initAttackPoints();
+                    this.updateComponentsForShip();
                     this.resetState();
                     if (window.ship3D) {
                         window.ship3D.switchShipConfig(shipConfig);

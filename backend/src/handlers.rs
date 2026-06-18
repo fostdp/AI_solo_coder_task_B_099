@@ -18,6 +18,7 @@ pub struct AppState {
     pub clickhouse: ClickHouseClient,
     pub ws_server: Addr<WsServer>,
     pub default_config: ShipConfig,
+    pub damage_params: DamageParams,
 }
 
 pub async fn health_check() -> impl Responder {

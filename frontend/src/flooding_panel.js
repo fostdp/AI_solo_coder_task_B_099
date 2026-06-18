@@ -968,14 +968,16 @@ class FloodingPanel {
 
     initDoorControls() {
         this.doorStates = {};
+        this.hapticEnabled = navigator.vibrate !== undefined;
+        this.audioContext = null;
         this.updateDoorControls();
 
         document.getElementById('interactive-simulate-btn').addEventListener('click', async () => {
             const damageInput = document.getElementById('interactive-damage').value;
             const severity = parseFloat(document.getElementById('interactive-severity').value);
-            
+
             if (!damageInput) {
-                alert('请输入初始破损舱室');
+                this.showToast('请输入初始破损舱室', 'warning');
                 return;
             }
 
@@ -1010,12 +1012,125 @@ class FloodingPanel {
                 }
             } catch (error) {
                 console.error('Interactive simulation failed:', error);
+                this.showToast('仿真失败，请重试', 'warning');
             } finally {
                 const btn = document.getElementById('interactive-simulate-btn');
                 btn.textContent = '基于当前舱门状态仿真';
                 btn.disabled = false;
             }
         });
+    }
+
+    initAudioContext() {
+        if (!this.audioContext) {
+            try {
+                this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            } catch (e) {
+                console.log('Web Audio API not supported');
+            }
+        }
+        return this.audioContext;
+    }
+
+    playDoorSound(isClosing) {
+        const ctx = this.initAudioContext();
+        if (!ctx) return;
+
+        const now = ctx.currentTime;
+
+        if (isClosing) {
+            const osc1 = ctx.createOscillator();
+            const gain1 = ctx.createGain();
+            osc1.connect(gain1);
+            gain1.connect(ctx.destination);
+            osc1.type = 'sine';
+            osc1.frequency.setValueAtTime(200, now);
+            osc1.frequency.exponentialRampToValueAtTime(80, now + 0.1);
+            gain1.gain.setValueAtTime(0.3, now);
+            gain1.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+            osc1.start(now);
+            osc1.stop(now + 0.2);
+
+            const osc2 = ctx.createOscillator();
+            const gain2 = ctx.createGain();
+            osc2.connect(gain2);
+            gain2.connect(ctx.destination);
+            osc2.type = 'square';
+            osc2.frequency.setValueAtTime(400, now + 0.15);
+            gain2.gain.setValueAtTime(0.15, now + 0.15);
+            gain2.gain.exponentialRampToValueAtTime(0.01, now + 0.25);
+            osc2.start(now + 0.15);
+            osc2.stop(now + 0.25);
+        } else {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(100, now);
+            osc.frequency.exponentialRampToValueAtTime(200, now + 0.15);
+            gain.gain.setValueAtTime(0.25, now);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+            osc.start(now);
+            osc.stop(now + 0.2);
+
+            const noise = ctx.createBufferSource();
+            const noiseBuffer = ctx.createBuffer(1, ctx.sampleRate * 0.1, ctx.sampleRate);
+            const output = noiseBuffer.getChannelData(0);
+            for (let i = 0; i < noiseBuffer.length; i++) {
+                output[i] = Math.random() * 2 - 1;
+            }
+            noise.buffer = noiseBuffer;
+            const noiseGain = ctx.createGain();
+            noise.connect(noiseGain);
+            noiseGain.connect(ctx.destination);
+            noiseGain.gain.setValueAtTime(0.05, now);
+            noiseGain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+            noise.start(now);
+        }
+    }
+
+    triggerHapticFeedback(intensity = 'medium') {
+        if (!this.hapticEnabled) return;
+
+        try {
+            switch (intensity) {
+                case 'light':
+                    navigator.vibrate(10);
+                    break;
+                case 'medium':
+                    navigator.vibrate([30, 20, 30]);
+                    break;
+                case 'heavy':
+                    navigator.vibrate([50, 30, 50, 30, 50]);
+                    break;
+                case 'lock':
+                    navigator.vibrate([20, 50, 100]);
+                    break;
+            }
+        } catch (e) {
+            console.log('Haptic feedback not available');
+        }
+    }
+
+    showToast(message, type = 'info', duration = 3000) {
+        const container = document.getElementById('toast-container');
+        if (!container) return;
+
+        const toast = document.createElement('div');
+        toast.className = `toast-notification ${type}`;
+        toast.innerHTML = message;
+
+        container.appendChild(toast);
+
+        requestAnimationFrame(() => {
+            toast.classList.add('show');
+        });
+
+        setTimeout(() => {
+            toast.classList.remove('show');
+            setTimeout(() => toast.remove(), 300);
+        }, duration);
     }
 
     updateDoorControls() {
@@ -1032,16 +1147,20 @@ class FloodingPanel {
 
             const div = document.createElement('div');
             div.className = 'door-control';
-            
+            div.id = `door-control-${i}`;
+            if (!this.doorStates[i]) {
+                div.classList.add('active');
+            }
+
             const leftName = this.currentShipConfig.compartment_names[i] || `舱${i}`;
             const rightName = this.currentShipConfig.compartment_names[i + 1] || `舱${i + 1}`;
-            
+
             div.innerHTML = `
                 <span class="door-name">${i}号舱壁 (${leftName} ↔ ${rightName})</span>
                 <span class="door-status ${this.doorStates[i] ? 'open' : 'closed'}" id="door-status-${i}">
                     ${this.doorStates[i] ? '开启' : '关闭'}
                 </span>
-                <label class="switch">
+                <label class="switch" id="switch-${i}">
                     <input type="checkbox" id="door-${i}" ${this.doorStates[i] ? 'checked' : ''} data-bulkhead="${i}" />
                     <span class="slider"></span>
                 </label>
@@ -1051,10 +1170,41 @@ class FloodingPanel {
             div.querySelector('input').addEventListener('change', async (e) => {
                 const bulkheadId = parseInt(e.target.dataset.bulkhead);
                 const isOpen = e.target.checked;
+                const isClosing = !isOpen;
+
                 this.doorStates[bulkheadId] = isOpen;
-                
-                document.getElementById(`door-status-${bulkheadId}`).textContent = isOpen ? '开启' : '关闭';
-                document.getElementById(`door-status-${bulkheadId}`).className = `door-status ${isOpen ? 'open' : 'closed'}`;
+
+                const statusEl = document.getElementById(`door-status-${bulkheadId}`);
+                statusEl.textContent = isOpen ? '开启' : '关闭';
+                statusEl.className = `door-status ${isOpen ? 'open' : 'closed'}`;
+
+                const controlEl = document.getElementById(`door-control-${bulkheadId}`);
+                const switchEl = document.getElementById(`switch-${bulkheadId}`);
+
+                controlEl.classList.remove('active', 'door-locking', 'door-unlocking', 'force-feedback-pulse');
+                void controlEl.offsetWidth;
+
+                if (isClosing) {
+                    controlEl.classList.add('active', 'door-locking');
+                    switchEl.classList.add('force-feedback-pulse');
+                    this.triggerHapticFeedback('lock');
+                    this.playDoorSound(true);
+                    this.showToast(
+                        `🔒 ${bulkheadId}号水密舱门已关闭并锁闭<br><small>舱壁处于水密状态，可阻止进水蔓延</small>`,
+                        'success',
+                        2500
+                    );
+                } else {
+                    controlEl.classList.remove('active');
+                    controlEl.classList.add('door-unlocking');
+                    this.triggerHapticFeedback('medium');
+                    this.playDoorSound(false);
+                    this.showToast(
+                        `⚠️ ${bulkheadId}号水密舱门已开启<br><small>注意：舱门开启会导致进水通过此舱壁蔓延！</small>`,
+                        'warning',
+                        3000
+                    );
+                }
 
                 try {
                     await fetch('/api/door', {
@@ -1068,6 +1218,7 @@ class FloodingPanel {
                     });
                 } catch (error) {
                     console.error('Door control failed:', error);
+                    this.showToast('舱门状态同步失败', 'warning');
                 }
             });
         }

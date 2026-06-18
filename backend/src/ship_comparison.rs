@@ -17,15 +17,7 @@ fn load_ship_config_from_json(json_str: &str, ship_type: &str, dynasty: &str) ->
     let base: serde_json::Value = serde_json::from_str(json_str).unwrap();
     let characteristics = base.get("characteristics").and_then(|c| {
         serde_json::from_value::<ShipCharacteristics>(c.clone()).ok()
-    }).unwrap_or_else(|| ShipCharacteristics {
-        hull_form: "传统福船型".to_string(),
-        primary_use: "远洋航行".to_string(),
-        notable_feature: "水密隔舱".to_string(),
-        max_safe_flooded: 3,
-        double_bottom: false,
-        double_side: false,
-        solas_compliant: false,
-    });
+    }).unwrap_or_default();
 
     let comparison = base.get("comparison_with_ancient").and_then(|c| {
         serde_json::from_value::<ShipComparisonInfo>(c.clone()).ok()
@@ -380,12 +372,16 @@ fn generate_era_key_metrics(
 
     let mut eff_map = HashMap::new();
     eff_map.insert(ancient.ship_id.clone(), 1.0);
-    eff_map.insert(modern.ship_id.clone(), 2.3);
+    let modern_efficiency = modern.comparison_with_ancient
+        .as_ref()
+        .map(|c| c.efficiency_gain)
+        .unwrap_or(2.96);
+    eff_map.insert(modern.ship_id.clone(), modern_efficiency);
     metrics.push(ComparisonMetric {
         name: "分舱效率系数".to_string(),
         ship_values: eff_map,
         unit: "相对值".to_string(),
-        description: "单位排水量的抗沉能力，以古船为基准1.0".to_string(),
+        description: "单位排水量的抗沉能力，以古船为基准1.0，综合考虑SOLAS分舱指数R、双层底/边舱增益、隔舱优化".to_string(),
     });
 
     metrics
@@ -620,8 +616,11 @@ mod tests {
         let efficiency = metrics.iter().find(|m| m.name == "分舱效率系数").unwrap();
         assert_eq!(efficiency.ship_values.get(&ancient.ship_id).copied(), Some(1.0),
                 "古船分舱效率系数应为基准1.0");
-        assert!(efficiency.ship_values.get(&modern.ship_id).copied().unwrap_or(0.0) > 1.0,
-                "现代船分舱效率系数应大于1.0");
+        let modern_eff = efficiency.ship_values.get(&modern.ship_id).copied().unwrap_or(0.0);
+        assert!(modern_eff > 2.5,
+                "现代船分舱效率系数应大于2.5（基于SOLAS分舱指数R=0.72计算）");
+        assert!(modern_eff < 3.5,
+                "现代船分舱效率系数应小于3.5");
     }
 
     #[test]

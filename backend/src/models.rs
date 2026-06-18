@@ -194,6 +194,41 @@ pub struct ShipCharacteristics {
     pub double_side: bool,
     #[serde(default)]
     pub solas_compliant: bool,
+    #[serde(default)]
+    pub solas_subdivision_index_r: Option<f64>,
+    #[serde(default)]
+    pub subdivision_factor_a: Option<f64>,
+    #[serde(default)]
+    pub subdivision_length_s: Option<f64>,
+    #[serde(default)]
+    pub permissible_length_ratio: Option<f64>,
+    #[serde(default)]
+    pub required_damage_stability_standard: Option<String>,
+    #[serde(default)]
+    pub regulation_reference: Option<String>,
+    #[serde(default)]
+    pub archaeological_reference: Option<String>,
+}
+
+impl Default for ShipCharacteristics {
+    fn default() -> Self {
+        Self {
+            hull_form: "传统福船型".to_string(),
+            primary_use: "远洋航行".to_string(),
+            notable_feature: "水密隔舱".to_string(),
+            max_safe_flooded: 3,
+            double_bottom: false,
+            double_side: false,
+            solas_compliant: false,
+            solas_subdivision_index_r: None,
+            subdivision_factor_a: None,
+            subdivision_length_s: None,
+            permissible_length_ratio: None,
+            required_damage_stability_standard: None,
+            regulation_reference: None,
+            archaeological_reference: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -591,6 +626,30 @@ mod tests {
         assert!(summary.is_safe);
         assert!(summary.reserve_buoyancy > 0.0);
         assert!(summary.metacentric_height > 0.0);
+    }
+
+    #[test]
+    fn test_ship_characteristics_default() {
+        let chars = ShipCharacteristics::default();
+        assert_eq!(chars.hull_form, "传统福船型");
+        assert_eq!(chars.max_safe_flooded, 3);
+        assert!(!chars.solas_compliant);
+        assert!(!chars.double_bottom);
+        assert!(chars.solas_subdivision_index_r.is_none());
+    }
+
+    #[test]
+    fn test_ship_characteristics_solas_fields() {
+        let mut chars = ShipCharacteristics::default();
+        chars.solas_compliant = true;
+        chars.solas_subdivision_index_r = Some(0.72);
+        chars.subdivision_factor_a = Some(0.6);
+        chars.regulation_reference = Some("SOLAS 1974".to_string());
+
+        assert!(chars.solas_compliant);
+        assert_eq!(chars.solas_subdivision_index_r, Some(0.72));
+        assert_eq!(chars.subdivision_factor_a, Some(0.6));
+        assert!(chars.regulation_reference.is_some());
     }
 
     #[test]

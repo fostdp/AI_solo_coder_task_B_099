@@ -370,6 +370,53 @@ impl ShipHydrostatics {
         }
     }
 
+    pub fn calculate_survival_probability(
+        &self,
+        result: &StabilityResult,
+        flooded_compartment_count: usize,
+    ) -> f64 {
+        use std::f64::consts::E;
+
+        let gm_min = self.params.min_metacentric_height;
+        let gm_target = 0.5;
+        let gm_norm = ((result.metacentric_height - gm_min) / (gm_target - gm_min)).clamp(0.0, 1.0);
+
+        let buoyancy_min = self.params.min_reserve_buoyancy;
+        let buoyancy_target = 30.0;
+        let buoyancy_norm = ((result.reserve_buoyancy - buoyancy_min) / (buoyancy_target - buoyancy_min)).clamp(0.0, 1.0);
+
+        let draft_ratio = result.final_draft / self.config.depth;
+        let draft_max = self.params.max_safe_draft_depth_ratio;
+        let draft_norm = ((draft_max - draft_ratio) / (draft_max - 0.6)).clamp(0.0, 1.0);
+
+        let heel_max = self.params.max_safe_heel_angle;
+        let heel_norm = ((heel_max - result.final_heel_angle.abs()) / heel_max).clamp(0.0, 1.0);
+
+        let total_compartments = self.config.compartment_count as f64;
+        let flooded_fraction = flooded_compartment_count as f64 / total_compartments;
+        let compartment_factor = (1.0 - flooded_fraction * 1.5).clamp(0.0, 1.0);
+
+        let w_gm = 0.35;
+        let w_buoyancy = 0.25;
+        let w_draft = 0.15;
+        let w_heel = 0.15;
+        let w_compartment = 0.10;
+
+        let z = w_gm * gm_norm
+            + w_buoyancy * buoyancy_norm
+            + w_draft * draft_norm
+            + w_heel * heel_norm
+            + w_compartment * compartment_factor;
+
+        let z_centered = (z - 0.5) * 6.0;
+        let sigmoid = 1.0 / (1.0 + E.powf(-z_centered));
+
+        let min_prob = if result.is_safe { 0.05 } else { 0.001 };
+        let max_prob = 0.99;
+
+        min_prob + sigmoid * (max_prob - min_prob)
+    }
+
     pub fn calculate_max_floodable_compartments(&self) -> u8 {
         for n in (1..=self.config.compartment_count).rev() {
             let compartments: Vec<u8> = (0..n).collect();
@@ -536,12 +583,10 @@ impl ShipHydrostatics {
         };
         let final_result = self.simulate_damage(&final_scenario);
 
-        let survival_probability = if final_result.is_safe {
-            (final_result.metacentric_height / 0.5).min(1.0)
-                * (final_result.reserve_buoyancy / 30.0).min(1.0)
-        } else {
-            0.0
-        };
+        let survival_probability = self.calculate_survival_probability(
+            &final_result,
+            active_compartments.len(),
+        );
 
         if final_result.is_safe {
             timeline.push(crate::models::TimelineEvent {
@@ -1231,13 +1276,75 @@ mod tests {
         };
         let mild_result = hydro.simulate_pirate_attack(&mild);
         assert!(
-            mild_result.survival_probability >= 0.0,
-            "生存概率应>=0"
+            mild_result.survival_probability > 0.0,
+            "轻度破损生存率应大于0"
         );
         assert!(
             mild_result.survival_probability <= 1.0,
-            "生存概率应<=1"
+            "生存率应<=1"
         );
+        assert!(
+            mild_result.survival_probability > 0.5,
+            "轻度破损生存率应大于0.5"
+        );
+    }
+
+    #[test]
+    fn test_calculate_survival_probability_sigmoid_shape() {
+        let hydro = test_hydrostatics();
+
+        let base_scenario = FloodingScenario {
+            ship_id: "test".to_string(),
+            flooded_compartments: vec![],
+            damage_severity: 0.0,
+        };
+        let base_result = hydro.simulate_damage(&base_scenario);
+        let prob_safe = hydro.calculate_survival_probability(&base_result, 0);
+        assert!(prob_safe > 0.9, "无破损生存率应接近1.0");
+
+        let severe_scenario = FloodingScenario {
+            ship_id: "test".to_string(),
+            flooded_compartments: vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+            damage_severity: 1.0,
+        };
+        let severe_result = hydro.simulate_damage(&severe_scenario);
+        let prob_severe = hydro.calculate_survival_probability(&severe_result, 10);
+        assert!(prob_severe < 0.5, "全舱破损生存率应小于0.5");
+        assert!(prob_severe >= 0.001, "即使严重破损生存率也应>=0.001");
+    }
+
+    #[test]
+    fn test_calculate_survival_probability_monotonic() {
+        let hydro = test_hydrostatics();
+
+        let s1 = FloodingScenario {
+            ship_id: "test".to_string(),
+            flooded_compartments: vec![2],
+            damage_severity: 0.3,
+        };
+        let r1 = hydro.simulate_damage(&s1);
+        let p1 = hydro.calculate_survival_probability(&r1, 1);
+
+        let s2 = FloodingScenario {
+            ship_id: "test".to_string(),
+            flooded_compartments: vec![2, 3, 4],
+            damage_severity: 0.7,
+        };
+        let r2 = hydro.simulate_damage(&s2);
+        let p2 = hydro.calculate_survival_probability(&r2, 3);
+
+        assert!(p1 > p2, "破损越严重，生存率应越低: p1={:.3} > p2={:.3}", p1, p2);
+    }
+
+    #[test]
+    fn test_survival_probability_weights_sum_to_one() {
+        let w_gm = 0.35;
+        let w_buoyancy = 0.25;
+        let w_draft = 0.15;
+        let w_heel = 0.15;
+        let w_compartment = 0.10;
+        let total = w_gm + w_buoyancy + w_draft + w_heel + w_compartment;
+        assert!((total - 1.0).abs() < 0.001, "权重之和应等于1.0，实际为{}", total);
     }
 
     #[test]
